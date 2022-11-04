@@ -15,7 +15,7 @@ user_id = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 
 
-def append_row(df:pandas.DataFrame, row:lists) -> None:
+def append_row(df:pd.DataFrame, row:list) -> None:
     df.loc[len(df.index)] = row
 
 
@@ -93,14 +93,14 @@ def get_primary_band(bands:dict) -> int:
     return max(bands, key=bands.get)
 
 
-def getPlaylistID(playlistName:string) -> string:
+def getPlaylistID(playlistName:str) -> str:
     for lists in playlists['items']:
         if lists['name'] == playlistName:
             return lists['id']
     return None
 
 
-def sortPlaylist(playlistName:string) -> None:
+def sortPlaylist(playlistName:str) -> None:
     source_playlist_id = f'spotify:user:spotifycharts:playlist:{getPlaylistID(playlistName)}'
     pl_results = sp.playlist(source_playlist_id, fields='name,tracks.total')
     playlist_name = pl_results['name']
