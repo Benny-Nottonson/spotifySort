@@ -15,15 +15,15 @@ user_id = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 
 
-def append_row(df, row):
+def append_row(df:pandas.DataFrame, row:lists) -> None:
     df.loc[len(df.index)] = row
 
 
-def normalize_color(rgb):
+def normalize_color(rgb:tuple) -> tuple:
     return tuple([x / 255 for x in rgb])
 
 
-def rgb_to_hsY(rgb):
+def rgb_to_hsY(rgb:tuple) -> tuple:
     r, g, b = rgb
     maxc = max(r, g, b)
     minc = min(r, g, b)
@@ -51,16 +51,16 @@ def rgb_to_hsY(rgb):
     return h, s, Y
 
 
-def is_vivid(s, Y):
+def is_vivid(s:float, Y:float) -> bool:
     return s > 0.15 and 0.18 < Y < 0.95
 
 
-def get_rainbow_band(hue, band_deg):
+def get_rainbow_band(hue:int, band_deg:int) -> int:
     rb_hue = (hue + 30) % 360
     return rb_hue // band_deg
 
 
-def get_image_rainbow_bands_and_perceived_brightness(image, band_deg):
+def get_image_rainbow_bands_and_perceived_brightness(image:Image, band_deg:int) -> tuple:
     pixels = image.convert('RGB').getdata()
     band_cnt = 360 // band_deg
     all_bands = dict.fromkeys(range(band_cnt), 0)
@@ -89,18 +89,18 @@ def get_image_rainbow_bands_and_perceived_brightness(image, band_deg):
     return bands, perceived_luminance, vividness
 
 
-def get_primary_band(bands):
+def get_primary_band(bands:dict) -> int:
     return max(bands, key=bands.get)
 
 
-def getPlaylistID(playlistName):
+def getPlaylistID(playlistName:string) -> string:
     for lists in playlists['items']:
         if lists['name'] == playlistName:
             return lists['id']
     return None
 
 
-def sortPlaylist(playlistName):
+def sortPlaylist(playlistName:string) -> None:
     source_playlist_id = f'spotify:user:spotifycharts:playlist:{getPlaylistID(playlistName)}'
     pl_results = sp.playlist(source_playlist_id, fields='name,tracks.total')
     playlist_name = pl_results['name']
