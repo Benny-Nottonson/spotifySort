@@ -5,9 +5,9 @@ import pandas as pd
 import requests
 from PIL import Image
 
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
-                                               client_secret="66cf7cbac6b647168befe4d2db016cd2",
-                                               redirect_uri="http://example.com",
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="",
+                                               client_secret="",
+                                               redirect_uri="",
                                                scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private"))
 user_id = sp.current_user()['id']
 playlists = sp.current_user_playlists()
