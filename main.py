@@ -27,10 +27,10 @@ def rgb_to_hsY(rgb: tuple) -> tuple:
     minc = min(r, g, b)
     sumc = (maxc + minc)
     rangec = (maxc - minc)
-    l = sumc / 2.0
+    mid = sumc / 2.0
     if minc == maxc:
-        return 0.0, l, 0.0
-    if l <= 0.5:
+        return 0.0, mid, 0.0
+    if mid <= 0.5:
         s = rangec / sumc
     else:
         s = rangec / (2.0 - sumc)
@@ -130,8 +130,10 @@ def sortPlaylist(playlistName: str) -> None:
 
 
 if __name__ == '__main__':
-    for lists in playlists['items']:
-        print(lists['name'])
+    print(end='|  ')
+    for pLists in playlists['items']:
+        print(pLists['name'], end='  |  ')
+    print('\n------------------------------------')
     choice = input("Enter playlist name: ")
 
     for playlist in playlists['items']:
