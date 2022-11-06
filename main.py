@@ -91,9 +91,9 @@ def get_primary_band(bands: dict) -> int:
 
 
 def getPlaylistID(playlistName: str) -> int or None:
-    for pLists in playlists['items']:
-        if pLists['name'] == playlistName:
-            return pLists['id']
+    for playLists in playlists['items']:
+        if playLists['name'] == playlistName:
+            return playLists['id']
     return None
 
 
