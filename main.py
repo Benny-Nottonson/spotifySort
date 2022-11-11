@@ -1,27 +1,76 @@
-import pandas
+import pickle
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
-import pandas as pd
 import requests
+import numpy as np
+import pandas as pd
 from PIL import Image
+from minisom import MiniSom
+from sklearn.decomposition import PCA
+from spotipy.oauth2 import SpotifyOAuth
 
+# The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="",
                                                client_secret="",
-                                               redirect_uri="",
-                                               scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private"))
+                                               redirect_uri="http://example.com",
+                                               scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
 user_id = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 
 
-def append_row(df: pandas.DataFrame, row: list) -> None:
+def getImage(url: str) -> Image:
+    """Returns an Image object from a given url"""
+    img = Image.open(requests.get(url, stream=True).raw).resize((32, 32))
+    return img
+
+
+def imgToArr(img: Image) -> np.array:
+    """Returns a numpy array from a given Image object"""
+    return np.array(img)
+
+
+def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
+    """Returns a dataframe with the PCA shifted values, (PCA is Principal Component Analysis, applied with sklearn.decomposition.PCA)"""
+    df = dfOriginal.copy()
+    pca = PCA(n_components=3)
+    pca.fit(df[['band', 'Y', 'vividness']])
+    df[['band', 'Y', 'vividness']] = pca.transform(df[['band', 'Y', 'vividness']])
+    return df
+
+
+def miniSOMSort(df: pd.DataFrame) -> list:
+    """Implementation of the MiniSOM algorithm, returns a list of the sorted song IDs from a preprocessed dataframe"""
+    df = df.sample(frac=1).reset_index(drop=True)
+    df[['band', 'Y', 'vividness']] = (df[['band', 'Y', 'vividness']] - df[['band', 'Y', 'vividness']].mean()) / df[
+        ['band', 'Y', 'vividness']].std()
+    grid_size = int(5 * np.sqrt(len(df)))
+    df = PCAShift(df)
+    try:
+        som = pickle.load(open('som.p', 'rb'))
+    except FileNotFoundError:
+        som = MiniSom(grid_size, grid_size, 3, sigma=2, learning_rate=.0225, neighborhood_function='triangle',
+                      activation_distance='manhattan')
+        som.train_random(df[['band', 'Y', 'vividness']].values, 500000, verbose=True)
+        pickle.dump(som, open('som.p', 'wb'))
+    qnt = som.quantization(df[['band', 'Y', 'vividness']].values)
+    final = []
+    for i in range(0, len(qnt)):
+        final.append([df['track_id'][i], qnt[i][0], qnt[i][1]])
+    final.sort(key=lambda x: (x[1], x[2]))
+    return [node[0] for node in final]
+
+
+def append_row(df: pd.DataFrame, row: list) -> None:
+    """Appends a row to a dataframe"""
     df.loc[len(df.index)] = row
 
 
 def normalize_color(rgb: tuple) -> tuple:
+    """Normalizes a color tuple to a range of 0-1"""
     return tuple([x / 255 for x in rgb])
 
 
 def rgb_to_hsY(rgb: tuple) -> tuple:
+    """Converts an RGB color tuple to a Hue, Saturation, and Perceived Luminance tuple"""
     r, g, b = rgb
     maxc = max(r, g, b)
     minc = min(r, g, b)
@@ -49,15 +98,18 @@ def rgb_to_hsY(rgb: tuple) -> tuple:
 
 
 def is_vivid(s: int, Y: int) -> bool:
+    """Returns True if the color is vivid, False if not"""
     return s > 0.15 and 0.18 < Y < 0.95
 
 
 def get_rainbow_band(hue: int, band_deg: int) -> int:
+    """Returns the band of the rainbow that the color is in"""
     rb_hue = (hue + 30) % 360
     return rb_hue // band_deg
 
 
 def get_image_rainbow_bands_and_perceived_brightness(image: Image, band_deg: int) -> tuple:
+    """Returns a tuple of the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
     pixels = image.convert('RGB').getdata()
     band_cnt = 360 // band_deg
     all_bands = dict.fromkeys(range(band_cnt), 0)
@@ -87,10 +139,12 @@ def get_image_rainbow_bands_and_perceived_brightness(image: Image, band_deg: int
 
 
 def get_primary_band(bands: dict) -> int:
+    """Returns the primary band of the image"""
     return max(bands, key=bands.get)
 
 
 def getPlaylistID(playlistName: str) -> int or None:
+    """Returns the ID of a playlist, or None if it doesn't exist"""
     for playLists in playlists['items']:
         if playLists['name'] == playlistName:
             return playLists['id']
@@ -98,6 +152,8 @@ def getPlaylistID(playlistName: str) -> int or None:
 
 
 def sortPlaylist(playlistName: str) -> None:
+    """Sorts a playlist by the MiniSOM algorithm"""
+    # Processing the playlist
     playlistID = getPlaylistID(playlistName)
     source_playlist_id = f'spotify:user:spotifycharts:playlist:{playlistID}'
     pl_results = sp.playlist(source_playlist_id, fields='name,tracks.total')
@@ -110,23 +166,38 @@ def sortPlaylist(playlistName: str) -> None:
         batch_items = batch['items']
         offset += len(batch_items)
         playlist_items.extend(batch_items)
+    
+    # Creating the dataframe
     df = pd.DataFrame(columns=['track_id', 'band', 'Y', 'vividness', 'track_number', 'img_url'])
+
+    # Processing the images
     for item in playlist_items:
         track = item['track']
         track_id = track['id']
         track_number = track['track_number']
         cover_image_url = track['album']['images'][-1]['url']
-        track_image = Image.open(requests.get(cover_image_url, stream=True).raw).resize((16, 16))
+        track_image = Image.open(requests.get(cover_image_url, stream=True).raw).resize((32, 32))
         bands, Y, vividness = get_image_rainbow_bands_and_perceived_brightness(track_image, band_deg=30)
         primary_band = get_primary_band(bands)
         append_row(df, [track_id, primary_band, Y, vividness, track_number, cover_image_url])
-    df = df.sort_values(by=['band', 'Y', 'track_number'])
-    sorted_track_ids = df['track_id'].tolist()
-    sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sorted_track_ids)
+
+    # Applying a PCA Shift then sorting using the MiniSOM algorithm
+    df = PCAShift(df)
+    df = df.sort_values(by=['band', 'Y', 'vividness', 'track_number'])
+    sorted_track_ids = miniSOMSort(df)
+
+    # Reorders the playlist
     offset = 0
-    while offset < playlist_length:
-        sp.playlist_add_items(playlist_id=source_playlist_id, items=sorted_track_ids[offset:offset + 100])
-        offset += 100
+    if len(sorted_track_ids) > 100:
+        while True:
+            sp.playlist_remove_all_occurrences_of_items(playlistID, sorted_track_ids[offset:offset + 100])
+            offset += 100
+            if offset >= len(sorted_track_ids):
+                break
+    else:
+        sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sorted_track_ids)
+    for track_id in sorted_track_ids:
+        sp.playlist_add_items(playlistID, [track_id])
 
 
 if __name__ == '__main__':
@@ -138,7 +209,5 @@ if __name__ == '__main__':
 
     for playlist in playlists['items']:
         if playlist['name'] == choice:
-            print("Sorting...")
             sortPlaylist(choice)
-            print("Done!")
             break
