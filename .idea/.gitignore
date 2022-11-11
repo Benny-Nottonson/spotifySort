@@ -1,4 +1,6 @@
-.idea
+# Default ignored files
+/shelf/
+/workspace.xml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
