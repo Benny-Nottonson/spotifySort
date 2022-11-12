@@ -3,14 +3,16 @@ import spotipy
 import requests
 import numpy as np
 import pandas as pd
+import tkinter as tk
 from PIL import Image
+from tkinter import ttk
 from minisom import MiniSom
 from sklearn.decomposition import PCA
 from spotipy.oauth2 import SpotifyOAuth
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="",
-                                               client_secret="",
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
+                                               client_secret="039f36800bc44b198f56509a78e6b7fc",
                                                redirect_uri="http://example.com",
                                                scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
 user_id = sp.current_user()['id']
@@ -152,6 +154,10 @@ def getPlaylistID(playlistName: str) -> int or None:
 
 
 def sortPlaylist(playlistName: str) -> None:
+    # Update progress bar
+    progress['value'] = 5  # Update progress bar
+    progress['maximum'] = 100
+    progress.update()
     """Sorts a playlist by the MiniSOM algorithm"""
     # Processing the playlist
     playlistID = getPlaylistID(playlistName)
@@ -166,9 +172,14 @@ def sortPlaylist(playlistName: str) -> None:
         batch_items = batch['items']
         offset += len(batch_items)
         playlist_items.extend(batch_items)
-    
+    # Update progress bar
+    progress['value'] = 10  # Update progress bar
+    progress.update()
+
     # Creating the dataframe
     df = pd.DataFrame(columns=['track_id', 'band', 'Y', 'vividness', 'track_number', 'img_url'])
+    progress['value'] = 15  # Update progress bar
+    progress.update()
 
     # Processing the images
     for item in playlist_items:
@@ -180,11 +191,17 @@ def sortPlaylist(playlistName: str) -> None:
         bands, Y, vividness = get_image_rainbow_bands_and_perceived_brightness(track_image, band_deg=30)
         primary_band = get_primary_band(bands)
         append_row(df, [track_id, primary_band, Y, vividness, track_number, cover_image_url])
+    progress['value'] = 20  # Update progress bar
+    progress.update()
 
     # Applying a PCA Shift then sorting using the MiniSOM algorithm
     df = PCAShift(df)
     df = df.sort_values(by=['band', 'Y', 'vividness', 'track_number'])
+    progress['value'] = 35  # Update progress bar
+    progress.update()
     sorted_track_ids = miniSOMSort(df)
+    progress['value'] = 65  # Update progress bar
+    progress.update()
 
     # Reorders the playlist
     offset = 0
@@ -198,16 +215,24 @@ def sortPlaylist(playlistName: str) -> None:
         sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sorted_track_ids)
     for track_id in sorted_track_ids:
         sp.playlist_add_items(playlistID, [track_id])
+    progress['value'] = 0
+    progress.update()
 
 
 if __name__ == '__main__':
-    print(end='|  ')
-    for pLists in playlists['items']:
-        print(pLists['name'], end='  |  ')
-    print('\n------------------------------------')
-    choice = input("Enter playlist name: ")
-
-    for playlist in playlists['items']:
-        if playlist['name'] == choice:
-            sortPlaylist(choice)
-            break
+    """Main function for GUI"""
+    window = tk.Tk()
+    window.title("Spotify Playlist Sorter")
+    window.geometry('500x200')
+    playlist_names = []
+    for playLists in playlists['items']:
+        playlist_names.append(playLists['name'])
+    clicked = tk.StringVar()
+    clicked.set(playlist_names[0])
+    drop = tk.OptionMenu(window, clicked, *playlist_names)
+    drop.pack()
+    sortButton = tk.Button(window, text="Sort", command=lambda: sortPlaylist(clicked.get()))
+    sortButton.pack()
+    progress = ttk.Progressbar(window, orient=tk.HORIZONTAL, length=200, mode='determinate')
+    progress.pack()
+    window.mainloop()
