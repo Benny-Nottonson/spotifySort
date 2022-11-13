@@ -11,23 +11,12 @@ from sklearn.decomposition import PCA
 from spotipy.oauth2 import SpotifyOAuth
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="",
-                                               client_secret="",
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
+                                               client_secret="02b21f43b4ef4774986cf0f29b4888c5",
                                                redirect_uri="http://example.com",
                                                scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
 user_id = sp.current_user()['id']
 playlists = sp.current_user_playlists()
-
-
-def getImage(url: str) -> Image:
-    """Returns an Image object from a given url"""
-    img = Image.open(requests.get(url, stream=True).raw).resize((32, 32))
-    return img
-
-
-def imgToArr(img: Image) -> np.array:
-    """Returns a numpy array from a given Image object"""
-    return np.array(img)
 
 
 def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
@@ -45,7 +34,6 @@ def miniSOMSort(df: pd.DataFrame) -> list:
     df[['band', 'Y', 'vividness']] = (df[['band', 'Y', 'vividness']] - df[['band', 'Y', 'vividness']].mean()) / df[
         ['band', 'Y', 'vividness']].std()
     grid_size = int(5 * np.sqrt(len(df)))
-    df = PCAShift(df)
     try:
         som = pickle.load(open('som.p', 'rb'))
     except FileNotFoundError:
@@ -61,17 +49,17 @@ def miniSOMSort(df: pd.DataFrame) -> list:
     return [node[0] for node in final]
 
 
-def append_row(df: pd.DataFrame, row: list) -> None:
+def appendRow(df: pd.DataFrame, row: list) -> None:
     """Appends a row to a dataframe"""
     df.loc[len(df.index)] = row
 
 
-def normalize_color(rgb: tuple) -> tuple:
+def normalizeColor(rgb: tuple) -> tuple:
     """Normalizes a color tuple to a range of 0-1"""
     return tuple([x / 255 for x in rgb])
 
 
-def rgb_to_hsY(rgb: tuple) -> tuple:
+def RGBtoHSY(rgb: tuple) -> tuple:
     """Converts an RGB color tuple to a Hue, Saturation, and Perceived Luminance tuple"""
     r, g, b = rgb
     maxc = max(r, g, b)
@@ -99,33 +87,27 @@ def rgb_to_hsY(rgb: tuple) -> tuple:
     return h, s, Y
 
 
-def is_vivid(s: int, Y: int) -> bool:
+def isVivid(s: int, Y: int) -> bool:
     """Returns True if the color is vivid, False if not"""
     return s > 0.15 and 0.18 < Y < 0.95
 
 
-def get_rainbow_band(hue: int, band_deg: int) -> int:
-    """Returns the band of the rainbow that the color is in"""
-    rb_hue = (hue + 30) % 360
-    return rb_hue // band_deg
-
-
-def get_image_rainbow_bands_and_perceived_brightness(image: Image, band_deg: int) -> tuple:
+def getBandsAndBrightness(image: Image) -> tuple:
     """Returns a tuple of the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
     pixels = image.convert('RGB').getdata()
-    band_cnt = 360 // band_deg
+    band_cnt = 360 // 30
     all_bands = dict.fromkeys(range(band_cnt), 0)
     vivid_bands = dict.fromkeys(range(band_cnt), 0)
     perceived_luminance = 0.0
     vivid_pixels = 0
     for pixel in pixels:
-        rgb = normalize_color(pixel)
-        h, s, Y = rgb_to_hsY(rgb)
+        rgb = normalizeColor(pixel)
+        h, s, Y = RGBtoHSY(rgb)
         perceived_luminance += Y
-        ab = get_rainbow_band(h, band_deg)
+        ab = ((h + 30) % 360) // 30
         all_bands[ab] += 1
-        if is_vivid(s, Y):
-            vb = get_rainbow_band(h, band_deg)
+        if isVivid(s, Y):
+            vb = ((h + 30) % 360) // 30
             vivid_bands[vb] += 1
             vivid_pixels += 1
     if sum(vivid_bands.values()) > 0:
@@ -140,16 +122,11 @@ def get_image_rainbow_bands_and_perceived_brightness(image: Image, band_deg: int
     return bands, perceived_luminance, vividness
 
 
-def get_primary_band(bands: dict) -> int:
-    """Returns the primary band of the image"""
-    return max(bands, key=bands.get)
-
-
 def getPlaylistID(playlistName: str) -> int or None:
     """Returns the ID of a playlist, or None if it doesn't exist"""
-    for playLists in playlists['items']:
-        if playLists['name'] == playlistName:
-            return playLists['id']
+    for ids in playlists['items']:
+        if ids['name'] == playlistName:
+            return ids['id']
     return None
 
 
@@ -188,22 +165,21 @@ def sortPlaylist(playlistName: str) -> None:
         track_number = track['track_number']
         cover_image_url = track['album']['images'][-1]['url']
         track_image = Image.open(requests.get(cover_image_url, stream=True).raw).resize((32, 32))
-        bands, Y, vividness = get_image_rainbow_bands_and_perceived_brightness(track_image, band_deg=30)
-        primary_band = get_primary_band(bands)
-        append_row(df, [track_id, primary_band, Y, vividness, track_number, cover_image_url])
+        bands, Y, vividness = getBandsAndBrightness(track_image)
+        primary_band = max(bands, key=bands.get)
+        appendRow(df, [track_id, primary_band, Y, vividness, track_number, cover_image_url])
     progress['value'] = 20  # Update progress bar
     progress.update()
 
     # Applying a PCA Shift then sorting using the MiniSOM algorithm
     df = PCAShift(df)
-    df = df.sort_values(by=['band', 'Y', 'vividness', 'track_number'])
     progress['value'] = 35  # Update progress bar
     progress.update()
     sorted_track_ids = miniSOMSort(df)
     progress['value'] = 65  # Update progress bar
     progress.update()
 
-    # Reorders the playlist
+    # Reorders the playlist, batches of 100 tracks in order to avoid the 100 track limit
     offset = 0
     if len(sorted_track_ids) > 100:
         while True:
@@ -213,8 +189,17 @@ def sortPlaylist(playlistName: str) -> None:
                 break
     else:
         sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sorted_track_ids)
-    for track_id in sorted_track_ids:
-        sp.playlist_add_items(playlistID, [track_id])
+
+    offset = 0
+    if len(sorted_track_ids) > 100:
+        while True:
+            sp.playlist_add_items(playlistID, sorted_track_ids[offset:offset + 100], offset)
+            offset += 100
+            if offset >= len(sorted_track_ids):
+                break
+    else:
+        sp.playlist_add_items(playlistID, sorted_track_ids, offset)
+
     progress['value'] = 0
     progress.update()
 
