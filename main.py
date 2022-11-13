@@ -10,13 +10,122 @@ from minisom import MiniSom
 from sklearn.decomposition import PCA
 from spotipy.oauth2 import SpotifyOAuth
 
+global progress
+
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
-                                               client_secret="02b21f43b4ef4774986cf0f29b4888c5",
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="",
+                                               client_secret="",
                                                redirect_uri="http://example.com",
                                                scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
-user_id = sp.current_user()['id']
+userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
+
+
+def updateProgressBar(newVal: int) -> None:
+    """Updates the slider value"""
+    progress['value'] = newVal
+    progress.update()
+
+
+def shuffleAndNormalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Shuffles the dataframe and normalizes the values"""
+    df = df.sample(frac=1).reset_index(drop=True)
+    df[['band', 'Y', 'vividness']] = (df[['band', 'Y', 'vividness']] - df[['band', 'Y', 'vividness']].mean()) / df[
+        ['band', 'Y', 'vividness']].std()
+    return df
+
+
+def appendRow(df: pd.DataFrame, row: list) -> None:
+    """Appends a row to a dataframe"""
+    df.loc[len(df.index)] = row
+
+
+def normalizeColor(rgb: tuple) -> tuple:
+    """Normalizes a color tuple to a range of 0-1"""
+    return tuple([x / 255 for x in rgb])
+
+
+def isVivid(s: int, Y: int) -> bool:
+    """Returns True if the color is vivid, False if not"""
+    return s > 0.15 and 0.18 < Y < 0.95
+
+
+def getPlaylistID(playlistName: str) -> int or None:
+    """Returns the ID of a playlist, or None if it doesn't exist"""
+    for ids in playlists['items']:
+        if ids['name'] == playlistName:
+            return ids['id']
+    return None
+
+
+def getPlaylistItems(playlistID: str) -> list:
+    """Returns a list of the items in a playlist"""
+    sourcePlaylistID = f'spotify:user:spotifycharts:playlist:{playlistID}'
+    playlistResults = sp.playlist(sourcePlaylistID, fields='name,tracks.total')
+    playlistLength = playlistResults['tracks']['total']
+    offset = 0
+    playlistItems = []
+    while offset < playlistLength:
+        batch = sp.playlist_items(sourcePlaylistID, offset=offset,
+                                  fields='items(track(id,track_number,album(images)))')
+        batchItems = batch['items']
+        offset += len(batchItems)
+        playlistItems.extend(batchItems)
+    return playlistItems
+
+
+def reorderPlaylist(playlistID: str, sortedTrackIDs: list) -> None:
+    """Reorders a playlist to match the order of the sorted track IDs"""
+    offset = 0
+    if len(sortedTrackIDs) > 100:
+        while True:
+            sp.playlist_remove_all_occurrences_of_items(playlistID, sortedTrackIDs[offset:offset + 100])
+            offset += 100
+            if offset >= len(sortedTrackIDs):
+                break
+    else:
+        sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sortedTrackIDs)
+    offset = 0
+    if len(sortedTrackIDs) > 100:
+        while True:
+            sp.playlist_add_items(playlistID, sortedTrackIDs[offset:offset + 100], offset)
+            offset += 100
+            if offset >= len(sortedTrackIDs):
+                break
+    else:
+        sp.playlist_add_items(playlistID, sortedTrackIDs, offset)
+
+
+def makeDataframe(playlistItems: list) -> pd.DataFrame:
+    """Returns a dataframe in containing the track IDs, the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
+    df = pd.DataFrame(columns=['trackID', 'band', 'Y', 'vividness'])
+    for item in playlistItems:
+        track = item['track']
+        trackID = track['id']
+        trackImage = Image.open(requests.get(track['album']['images'][-1]['url'], stream=True).raw).resize((32, 32))
+        bands, Y, vividness = getBandsAndBrightness(trackImage)
+        primaryBand = max(bands, key=bands.get)
+        appendRow(df, [trackID, primaryBand, Y, vividness])
+    return df
+
+
+def createUI() -> None:
+    window = tk.Tk()
+    window.title("Spotify Playlist Sorter")
+    window.geometry('210x100')
+    playlistNames = []
+    for playLists in playlists['items']:
+        playlistNames.append(playLists['name'])
+    clicked = tk.StringVar()
+    clicked.set(playlistNames[0])
+    drop = tk.OptionMenu(window, clicked, *playlistNames)
+    drop.pack()
+    sortButton = tk.Button(window, text="Sort", command=lambda: sortPlaylist(getPlaylistID(clicked.get())))
+    sortButton.pack()
+    global progress
+    progress = ttk.Progressbar(window, orient=tk.HORIZONTAL, length=200, mode='determinate')
+    progress.pack()
+    window.mainloop()
 
 
 def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
@@ -30,33 +139,50 @@ def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
 
 def miniSOMSort(df: pd.DataFrame) -> list:
     """Implementation of the MiniSOM algorithm, returns a list of the sorted song IDs from a preprocessed dataframe"""
-    df = df.sample(frac=1).reset_index(drop=True)
-    df[['band', 'Y', 'vividness']] = (df[['band', 'Y', 'vividness']] - df[['band', 'Y', 'vividness']].mean()) / df[
-        ['band', 'Y', 'vividness']].std()
-    grid_size = int(5 * np.sqrt(len(df)))
     try:
         som = pickle.load(open('som.p', 'rb'))
     except FileNotFoundError:
-        som = MiniSom(grid_size, grid_size, 3, sigma=2, learning_rate=.0225, neighborhood_function='triangle',
+        gridSize = int(5 * np.sqrt(len(df)))
+        som = MiniSom(gridSize, gridSize, 3, neighborhood_function='triangle',
                       activation_distance='manhattan')
-        som.train_random(df[['band', 'Y', 'vividness']].values, 500000, verbose=True)
+        som.train_random(df[['band', 'Y', 'vividness']].values, 1000000, verbose=True)
         pickle.dump(som, open('som.p', 'wb'))
     qnt = som.quantization(df[['band', 'Y', 'vividness']].values)
     final = []
     for i in range(0, len(qnt)):
-        final.append([df['track_id'][i], qnt[i][0], qnt[i][1]])
+        final.append([df['trackID'][i], qnt[i][0], qnt[i][1]])
     final.sort(key=lambda x: (x[1], x[2]))
     return [node[0] for node in final]
 
 
-def appendRow(df: pd.DataFrame, row: list) -> None:
-    """Appends a row to a dataframe"""
-    df.loc[len(df.index)] = row
-
-
-def normalizeColor(rgb: tuple) -> tuple:
-    """Normalizes a color tuple to a range of 0-1"""
-    return tuple([x / 255 for x in rgb])
+def getBandsAndBrightness(image: Image) -> tuple:
+    """Returns a tuple of the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
+    pixels = image.convert('RGB').getdata()
+    bandCenter = 360 // 30
+    allBands = dict.fromkeys(range(bandCenter), 0)
+    vividBands = dict.fromkeys(range(bandCenter), 0)
+    perceivedLuminance = 0.0
+    vividPixels = 0
+    for pixel in pixels:
+        rgb = normalizeColor(pixel)
+        h, s, Y = RGBtoHSY(rgb)
+        perceivedLuminance += Y
+        ab = ((h + 30) % 360) // 30
+        allBands[ab] += 1
+        if isVivid(s, Y):
+            vb = ((h + 30) % 360) // 30
+            vividBands[vb] += 1
+            vividPixels += 1
+    if sum(vividBands.values()) > 0:
+        bands = vividBands
+        bandPixels = vividPixels
+    else:
+        bands = allBands
+        bandPixels = len(pixels)
+    bands = {k: v / bandPixels for (k, v) in bands.items()}
+    perceivedLuminance = perceivedLuminance / len(pixels)
+    vividness = vividPixels / len(pixels)
+    return bands, perceivedLuminance, vividness
 
 
 def RGBtoHSY(rgb: tuple) -> tuple:
@@ -87,137 +213,19 @@ def RGBtoHSY(rgb: tuple) -> tuple:
     return h, s, Y
 
 
-def isVivid(s: int, Y: int) -> bool:
-    """Returns True if the color is vivid, False if not"""
-    return s > 0.15 and 0.18 < Y < 0.95
-
-
-def getBandsAndBrightness(image: Image) -> tuple:
-    """Returns a tuple of the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
-    pixels = image.convert('RGB').getdata()
-    band_cnt = 360 // 30
-    all_bands = dict.fromkeys(range(band_cnt), 0)
-    vivid_bands = dict.fromkeys(range(band_cnt), 0)
-    perceived_luminance = 0.0
-    vivid_pixels = 0
-    for pixel in pixels:
-        rgb = normalizeColor(pixel)
-        h, s, Y = RGBtoHSY(rgb)
-        perceived_luminance += Y
-        ab = ((h + 30) % 360) // 30
-        all_bands[ab] += 1
-        if isVivid(s, Y):
-            vb = ((h + 30) % 360) // 30
-            vivid_bands[vb] += 1
-            vivid_pixels += 1
-    if sum(vivid_bands.values()) > 0:
-        bands = vivid_bands
-        band_pixels = vivid_pixels
-    else:
-        bands = all_bands
-        band_pixels = len(pixels)
-    bands = {k: v / band_pixels for (k, v) in bands.items()}
-    perceived_luminance = perceived_luminance / len(pixels)
-    vividness = vivid_pixels / len(pixels)
-    return bands, perceived_luminance, vividness
-
-
-def getPlaylistID(playlistName: str) -> int or None:
-    """Returns the ID of a playlist, or None if it doesn't exist"""
-    for ids in playlists['items']:
-        if ids['name'] == playlistName:
-            return ids['id']
-    return None
-
-
-def sortPlaylist(playlistName: str) -> None:
-    # Update progress bar
-    progress['value'] = 5  # Update progress bar
-    progress['maximum'] = 100
-    progress.update()
+def sortPlaylist(playlistID: str) -> None:
     """Sorts a playlist by the MiniSOM algorithm"""
-    # Processing the playlist
-    playlistID = getPlaylistID(playlistName)
-    source_playlist_id = f'spotify:user:spotifycharts:playlist:{playlistID}'
-    pl_results = sp.playlist(source_playlist_id, fields='name,tracks.total')
-    playlist_length = pl_results['tracks']['total']
-    offset = 0
-    playlist_items = []
-    while offset < playlist_length:
-        batch = sp.playlist_items(source_playlist_id, offset=offset,
-                                  fields='items(track(id,track_number,album(images)))')
-        batch_items = batch['items']
-        offset += len(batch_items)
-        playlist_items.extend(batch_items)
-    # Update progress bar
-    progress['value'] = 10  # Update progress bar
-    progress.update()
-
-    # Creating the dataframe
-    df = pd.DataFrame(columns=['track_id', 'band', 'Y', 'vividness', 'track_number', 'img_url'])
-    progress['value'] = 15  # Update progress bar
-    progress.update()
-
-    # Processing the images
-    for item in playlist_items:
-        track = item['track']
-        track_id = track['id']
-        track_number = track['track_number']
-        cover_image_url = track['album']['images'][-1]['url']
-        track_image = Image.open(requests.get(cover_image_url, stream=True).raw).resize((32, 32))
-        bands, Y, vividness = getBandsAndBrightness(track_image)
-        primary_band = max(bands, key=bands.get)
-        appendRow(df, [track_id, primary_band, Y, vividness, track_number, cover_image_url])
-    progress['value'] = 20  # Update progress bar
-    progress.update()
-
-    # Applying a PCA Shift then sorting using the MiniSOM algorithm
+    updateProgressBar(5)
+    playlistItems = getPlaylistItems(playlistID)
+    df = makeDataframe(playlistItems)
+    updateProgressBar(20)
     df = PCAShift(df)
-    progress['value'] = 35  # Update progress bar
-    progress.update()
-    sorted_track_ids = miniSOMSort(df)
-    progress['value'] = 65  # Update progress bar
-    progress.update()
-
-    # Reorders the playlist, batches of 100 tracks in order to avoid the 100 track limit
-    offset = 0
-    if len(sorted_track_ids) > 100:
-        while True:
-            sp.playlist_remove_all_occurrences_of_items(playlistID, sorted_track_ids[offset:offset + 100])
-            offset += 100
-            if offset >= len(sorted_track_ids):
-                break
-    else:
-        sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sorted_track_ids)
-
-    offset = 0
-    if len(sorted_track_ids) > 100:
-        while True:
-            sp.playlist_add_items(playlistID, sorted_track_ids[offset:offset + 100], offset)
-            offset += 100
-            if offset >= len(sorted_track_ids):
-                break
-    else:
-        sp.playlist_add_items(playlistID, sorted_track_ids, offset)
-
-    progress['value'] = 0
-    progress.update()
+    updateProgressBar(35)
+    sortedTrackIDs = miniSOMSort(shuffleAndNormalize(df))
+    updateProgressBar(65)
+    reorderPlaylist(playlistID, sortedTrackIDs)
+    updateProgressBar(0)
 
 
 if __name__ == '__main__':
-    """Main function for GUI"""
-    window = tk.Tk()
-    window.title("Spotify Playlist Sorter")
-    window.geometry('500x200')
-    playlist_names = []
-    for playLists in playlists['items']:
-        playlist_names.append(playLists['name'])
-    clicked = tk.StringVar()
-    clicked.set(playlist_names[0])
-    drop = tk.OptionMenu(window, clicked, *playlist_names)
-    drop.pack()
-    sortButton = tk.Button(window, text="Sort", command=lambda: sortPlaylist(clicked.get()))
-    sortButton.pack()
-    progress = ttk.Progressbar(window, orient=tk.HORIZONTAL, length=200, mode='determinate')
-    progress.pack()
-    window.mainloop()
+    createUI()
