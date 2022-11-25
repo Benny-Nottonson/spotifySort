@@ -1,11 +1,11 @@
-import pickle
 import spotipy
 import requests
-import numpy as np
 import pandas as pd
 import tkinter as tk
 from PIL import Image
+from numpy import sqrt
 from tkinter import ttk
+from pickle import load, dump
 from minisom import MiniSom
 from sklearn.decomposition import PCA
 from spotipy.oauth2 import SpotifyOAuth
@@ -45,7 +45,7 @@ def normalizeColor(rgb: tuple) -> tuple:
     return tuple([x / 255 for x in rgb])
 
 
-def isVivid(s: int, Y: int) -> bool:
+def isVivid(s: float, Y: float) -> bool:
     """Returns True if the color is vivid, False if not"""
     return s > 0.15 and 0.18 < Y < 0.95
 
@@ -140,13 +140,12 @@ def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
 def miniSOMSort(df: pd.DataFrame) -> list:
     """Implementation of the MiniSOM algorithm, returns a list of the sorted song IDs from a preprocessed dataframe"""
     try:
-        som = pickle.load(open('som.p', 'rb'))
+        som = load(open('som.p', 'rb'))
     except FileNotFoundError:
-        gridSize = int(5 * np.sqrt(len(df)))
-        som = MiniSom(gridSize, gridSize, 3, neighborhood_function='triangle',
-                      activation_distance='manhattan')
+        gridSize = int(5 * sqrt(len(df)))
+        som = MiniSom(gridSize, gridSize, 3, learning_rate=0.001, neighborhood_function='bubble', activation_distance='cosine')
         som.train_random(df[['band', 'Y', 'vividness']].values, 1000000, verbose=True)
-        pickle.dump(som, open('som.p', 'wb'))
+        dump(som, open('som.p', 'wb'))
     qnt = som.quantization(df[['band', 'Y', 'vividness']].values)
     final = []
     for i in range(0, len(qnt)):
