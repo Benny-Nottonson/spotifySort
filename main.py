@@ -1,22 +1,22 @@
-import pickle
-import spotipy
-import requests
-import numpy as np
-import pandas as pd
-import tkinter as tk
 from PIL import Image
+from numpy import sqrt
 from tkinter import ttk
+from requests import get
+from spotipy import Spotify
+from pandas import DataFrame
+from pickle import load, dump
 from minisom import MiniSom
 from sklearn.decomposition import PCA
 from spotipy.oauth2 import SpotifyOAuth
+from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 
 global progress
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="",
-                                               client_secret="",
-                                               redirect_uri="http://example.com",
-                                               scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
+sp = Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
+                                       client_secret="02b21f43b4ef4774986cf0f29b4888c5",
+                                       redirect_uri="http://example.com",
+                                       scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 
@@ -27,7 +27,7 @@ def updateProgressBar(newVal: int) -> None:
     progress.update()
 
 
-def shuffleAndNormalize(df: pd.DataFrame) -> pd.DataFrame:
+def shuffleAndNormalize(df: DataFrame) -> DataFrame:
     """Shuffles the dataframe and normalizes the values"""
     df = df.sample(frac=1).reset_index(drop=True)
     df[['band', 'Y', 'vividness']] = (df[['band', 'Y', 'vividness']] - df[['band', 'Y', 'vividness']].mean()) / df[
@@ -35,7 +35,7 @@ def shuffleAndNormalize(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def appendRow(df: pd.DataFrame, row: list) -> None:
+def appendRow(df: DataFrame, row: list) -> None:
     """Appends a row to a dataframe"""
     df.loc[len(df.index)] = row
 
@@ -45,7 +45,7 @@ def normalizeColor(rgb: tuple) -> tuple:
     return tuple([x / 255 for x in rgb])
 
 
-def isVivid(s: int, Y: int) -> bool:
+def isVivid(s: float, Y: float) -> bool:
     """Returns True if the color is vivid, False if not"""
     return s > 0.15 and 0.18 < Y < 0.95
 
@@ -96,13 +96,13 @@ def reorderPlaylist(playlistID: str, sortedTrackIDs: list) -> None:
         sp.playlist_add_items(playlistID, sortedTrackIDs, offset)
 
 
-def makeDataframe(playlistItems: list) -> pd.DataFrame:
+def makeDataframe(playlistItems: list) -> DataFrame:
     """Returns a dataframe in containing the track IDs, the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
-    df = pd.DataFrame(columns=['trackID', 'band', 'Y', 'vividness'])
+    df = DataFrame(columns=['trackID', 'band', 'Y', 'vividness'])
     for item in playlistItems:
         track = item['track']
         trackID = track['id']
-        trackImage = Image.open(requests.get(track['album']['images'][-1]['url'], stream=True).raw).resize((32, 32))
+        trackImage = Image.open(get(track['album']['images'][-1]['url'], stream=True).raw).resize((32, 32))
         bands, Y, vividness = getBandsAndBrightness(trackImage)
         primaryBand = max(bands, key=bands.get)
         appendRow(df, [trackID, primaryBand, Y, vividness])
@@ -110,25 +110,25 @@ def makeDataframe(playlistItems: list) -> pd.DataFrame:
 
 
 def createUI() -> None:
-    window = tk.Tk()
+    window = Tk()
     window.title("Spotify Playlist Sorter")
     window.geometry('210x100')
     playlistNames = []
     for playLists in playlists['items']:
         playlistNames.append(playLists['name'])
-    clicked = tk.StringVar()
+    clicked = StringVar()
     clicked.set(playlistNames[0])
-    drop = tk.OptionMenu(window, clicked, *playlistNames)
+    drop = OptionMenu(window, clicked, *playlistNames)
     drop.pack()
-    sortButton = tk.Button(window, text="Sort", command=lambda: sortPlaylist(getPlaylistID(clicked.get())))
+    sortButton = Button(window, text="Sort", command=lambda: sortPlaylist(getPlaylistID(clicked.get())))
     sortButton.pack()
     global progress
-    progress = ttk.Progressbar(window, orient=tk.HORIZONTAL, length=200, mode='determinate')
+    progress = ttk.Progressbar(window, orient=HORIZONTAL, length=200, mode='determinate')
     progress.pack()
     window.mainloop()
 
 
-def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
+def PCAShift(dfOriginal: DataFrame) -> DataFrame:
     """Returns a dataframe with the PCA shifted values, (PCA is Principal Component Analysis, applied with sklearn.decomposition.PCA)"""
     df = dfOriginal.copy()
     pca = PCA(n_components=3)
@@ -137,16 +137,15 @@ def PCAShift(dfOriginal: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def miniSOMSort(df: pd.DataFrame) -> list:
+def miniSOMSort(df: DataFrame) -> list:
     """Implementation of the MiniSOM algorithm, returns a list of the sorted song IDs from a preprocessed dataframe"""
     try:
-        som = pickle.load(open('som.p', 'rb'))
+        som = load(open('som.p', 'rb'))
     except FileNotFoundError:
-        gridSize = int(5 * np.sqrt(len(df)))
-        som = MiniSom(gridSize, gridSize, 3, neighborhood_function='triangle',
-                      activation_distance='manhattan')
-        som.train_random(df[['band', 'Y', 'vividness']].values, 1000000, verbose=True)
-        pickle.dump(som, open('som.p', 'wb'))
+        gridSize = int(5 * sqrt(len(df)))
+        som = MiniSom(gridSize, gridSize, 3, learning_rate=0.001, sigma=1.0, neighborhood_function='cosine', activation_distance='bubble')
+        som.train_random(df[['band', 'Y', 'vividness']].values, 5000000, verbose=False)
+        dump(som, open('som.p', 'wb'))
     qnt = som.quantization(df[['band', 'Y', 'vividness']].values)
     final = []
     for i in range(0, len(qnt)):
