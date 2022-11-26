@@ -13,8 +13,8 @@ from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 global progress
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
-sp = Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
-                                       client_secret="02b21f43b4ef4774986cf0f29b4888c5",
+sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
+                                       client_secret="",
                                        redirect_uri="http://example.com",
                                        scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
 userID = sp.current_user()['id']
