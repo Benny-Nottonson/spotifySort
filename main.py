@@ -10,8 +10,8 @@ from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
-sp = Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
-                                       client_secret="914c47f811ff4d3ca6dc160ed8fe3f3b",
+sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
+                                       client_secret="",
                                        redirect_uri="https://example.com",
                                        scope="user-library-modify playlist-modify-public ugc-image-upload "
                                              "playlist-modify-private user-library-read"))
