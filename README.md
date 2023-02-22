@@ -1,6 +1,6 @@
 # Spotify Album Sorter 
 
-A project coded by Benny Nottonson using Python and the miniSOM implementation by JustGlowing
+A project coded by Benny Nottonson using Python, implements LRU Caching and CCV Vectors for sorting images
 
 
 
@@ -9,6 +9,7 @@ A project coded by Benny Nottonson using Python and the miniSOM implementation b
  - [miniSOM](https://github.com/JustGlowing/minisom/blob/master/minisom.py)
  - [HSY Concept](https://www.alanzucconi.com/2015/09/30/colour-sorting/)
  - [ML for Visual Sorting](https://towardsdatascience.com/machine-learning-to-visually-sort-7349d3660e1)
+ - [CCV Sorting](https://github.com/thjsimmons/SortByColor)
 
 
 
@@ -19,7 +20,6 @@ A project coded by Benny Nottonson using Python and the miniSOM implementation b
 ## Features
 
 - Allows selection of album
-- Preloaded training data
 - Works for public and private playlists
 - Runtime generally <= 30s
 - Scalable for large playlists
