@@ -1,80 +1,56 @@
 from PIL import Image
-from numpy import sqrt
 from tkinter import ttk
 from requests import get
 from spotipy import Spotify
-from pandas import DataFrame
-from pickle import load, dump
-from minisom import MiniSom
-from sklearn.decomposition import PCA
+from functools import lru_cache
 from spotipy.oauth2 import SpotifyOAuth
+from numpy import sum, ndarray, array, zeros, matmul, where
+from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 
-global progress
-
-# The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get the Client ID and Client Secret
-sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
-                                       client_secret="",
-                                       redirect_uri="http://example.com",
-                                       scope="user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"))
+# The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
+# the Client ID and Client Secret
+sp = Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
+                                       client_secret="914c47f811ff4d3ca6dc160ed8fe3f3b",
+                                       redirect_uri="https://example.com",
+                                       scope="user-library-modify playlist-modify-public ugc-image-upload "
+                                             "playlist-modify-private user-library-read"))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 
-
-def updateProgressBar(newVal: int) -> None:
-    """Updates the slider value"""
-    progress['value'] = newVal
-    progress.update()
-
-
-def shuffleAndNormalize(df: DataFrame) -> DataFrame:
-    """Shuffles the dataframe and normalizes the values"""
-    df = df.sample(frac=1).reset_index(drop=True)
-    df[['band', 'Y', 'vividness']] = (df[['band', 'Y', 'vividness']] - df[['band', 'Y', 'vividness']].mean()) / df[
-        ['band', 'Y', 'vividness']].std()
-    return df
+MACBETH_LIST = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)), ('blue sky', (98, 122, 157)),
+                ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)), ('bluish green', (103, 189, 170)),
+                ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)), ('moderate red', (193, 90, 99)),
+                ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)), ('orange yellow', (224, 163, 46)),
+                ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)), ('yellow', (231, 199, 31)),
+                ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)), ('white 9.5', (243, 243, 242)),
+                ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)), ('neutral 5', (122, 122, 121)),
+                ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
 
 
-def appendRow(df: DataFrame, row: list) -> None:
-    """Appends a row to a dataframe"""
-    df.loc[len(df.index)] = row
-
-
-def normalizeColor(rgb: tuple) -> tuple:
-    """Normalizes a color tuple to a range of 0-1"""
-    return tuple([x / 255 for x in rgb])
-
-
-def isVivid(s: float, Y: float) -> bool:
-    """Returns True if the color is vivid, False if not"""
-    return s > 0.15 and 0.18 < Y < 0.95
-
-
-def getPlaylistID(playlistName: str) -> int or None:
+def get_playlist_id(playlistName: str) -> str:
     """Returns the ID of a playlist, or None if it doesn't exist"""
     for ids in playlists['items']:
         if ids['name'] == playlistName:
             return ids['id']
-    return None
 
 
-def getPlaylistItems(playlistID: str) -> list:
+def get_playlist_items(playlistID: str) -> tuple:
     """Returns a list of the items in a playlist"""
-    sourcePlaylistID = f'spotify:user:spotifycharts:playlist:{playlistID}'
-    playlistResults = sp.playlist(sourcePlaylistID, fields='name,tracks.total')
+    playlistResults = sp.playlist(playlistID, fields='name,tracks.total')
     playlistLength = playlistResults['tracks']['total']
     offset = 0
     playlistItems = []
     while offset < playlistLength:
-        batch = sp.playlist_items(sourcePlaylistID, offset=offset,
+        batch = sp.playlist_items(playlistID, offset=offset,
                                   fields='items(track(id,track_number,album(images)))')
         batchItems = batch['items']
         offset += len(batchItems)
         playlistItems.extend(batchItems)
-    return playlistItems
+    return tuple(playlistItems)
 
 
-def reorderPlaylist(playlistID: str, sortedTrackIDs: list) -> None:
+def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
     """Reorders a playlist to match the order of the sorted track IDs"""
     offset = 0
     if len(sortedTrackIDs) > 100:
@@ -96,137 +72,190 @@ def reorderPlaylist(playlistID: str, sortedTrackIDs: list) -> None:
         sp.playlist_add_items(playlistID, sortedTrackIDs, offset)
 
 
-def makeDataframe(playlistItems: list) -> DataFrame:
-    """Returns a dataframe in containing the track IDs, the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
-    df = DataFrame(columns=['trackID', 'band', 'Y', 'vividness'])
-    for item in playlistItems:
+def make_ccv_collection(uiHook, playlistItems: tuple, data: callable) -> list:
+    """Returns a list of tuples containing the track IDs and the """
+    total = len(playlistItems)
+    tupleCollection = []
+    for ix, item in enumerate(playlistItems):
+        uiHook.updateProgressBar(20 + (ix / total) * 50)
         track = item['track']
         trackID = track['id']
-        trackImage = Image.open(get(track['album']['images'][-1]['url'], stream=True).raw).resize((32, 32))
-        bands, Y, vividness = getBandsAndBrightness(trackImage)
-        primaryBand = max(bands, key=bands.get)
-        appendRow(df, [trackID, primaryBand, Y, vividness])
-    return df
+        url = track['album']['images'][-1]['url']
+        trackImage = Image.open(get(url, stream=True).raw).resize((16, 16))
+        trackImage = pil_to_cv2(trackImage)
+        tupleCollection.append((trackID, data(trackImage)))
+    return tupleCollection
 
 
-def createUI() -> None:
-    window = Tk()
-    window.title("Spotify Playlist Sorter")
-    window.geometry('210x100')
-    playlistNames = []
-    for playLists in playlists['items']:
-        playlistNames.append(playLists['name'])
-    clicked = StringVar()
-    clicked.set(playlistNames[0])
-    drop = OptionMenu(window, clicked, *playlistNames)
-    drop.pack()
-    sortButton = Button(window, text="Sort", command=lambda: sortPlaylist(getPlaylistID(clicked.get())))
-    sortButton.pack()
-    global progress
-    progress = ttk.Progressbar(window, orient=HORIZONTAL, length=200, mode='determinate')
-    progress.pack()
-    window.mainloop()
+def ccv_sort(uiHook, playlistID: str) -> list:
+    """Sorts a playlist without using the MiniSOM algorithm, instead using either average, dominant, histogram,
+    or ccv"""
+    entries = make_ccv_collection(uiHook, get_playlist_items(playlistID), ccv)
+    uiHook.updateProgressBar(70)
+    loop = loop_sort(entries, ccv_distance)
+    images = []
+    uiHook.updateProgressBar(80)
+    for i in range(0, len(loop)):
+        uri = loop[i][0]
+        images.append(uri)
+    return images
 
 
-def PCAShift(dfOriginal: DataFrame) -> DataFrame:
-    """Returns a dataframe with the PCA shifted values, (PCA is Principal Component Analysis, applied with sklearn.decomposition.PCA)"""
-    df = dfOriginal.copy()
-    pca = PCA(n_components=3)
-    pca.fit(df[['band', 'Y', 'vividness']])
-    df[['band', 'Y', 'vividness']] = pca.transform(df[['band', 'Y', 'vividness']])
-    return df
+def sort_playlist(uiHook, playlistID: str) -> None:
+    """Sorts a playlist by the given algorithm"""
+    uiHook.updateProgressBar(20)
+    sortedTrackIDs = ccv_sort(uiHook, playlistID)
+    uiHook.updateProgressBar(90)
+    reorder_playlist(playlistID, sortedTrackIDs)
+    uiHook.updateProgressBar(0)
 
 
-def miniSOMSort(df: DataFrame) -> list:
-    """Implementation of the MiniSOM algorithm, returns a list of the sorted song IDs from a preprocessed dataframe"""
-    try:
-        som = load(open('som.p', 'rb'))
-    except FileNotFoundError:
-        gridSize = int(5 * sqrt(len(df)))
-        som = MiniSom(gridSize, gridSize, 3, learning_rate=0.001, sigma=1.0, neighborhood_function='cosine', activation_distance='bubble')
-        som.train_random(df[['band', 'Y', 'vividness']].values, 5000000, verbose=False)
-        dump(som, open('som.p', 'wb'))
-    qnt = som.quantization(df[['band', 'Y', 'vividness']].values)
-    final = []
-    for i in range(0, len(qnt)):
-        final.append([df['trackID'][i], qnt[i][0], qnt[i][1]])
-    final.sort(key=lambda x: (x[1], x[2]))
-    return [node[0] for node in final]
+def ccv(img: ndarray) -> list:
+    """Calculates the Color Coherence Vector of an image"""
+    threshold = round(0.01 * img.shape[0] * img.shape[1])
+    mac = rgb_to_mac(img)
+    n_blobs, blob = blob_extract(array(mac))
+    table = [[0, 0] for _ in range(0, n_blobs)]
+    for i in range(0, blob.shape[0]):
+        for j in range(0, blob.shape[1]):
+            table[blob[i][j] - 1] = [mac[i][j], table[blob[i][j] - 1][1] + 1]
+    CCV = [[0, 0] for _ in range(0, len(MACBETH_LIST))]
+    for entry in table:
+        color_index = entry[0]
+        size = entry[1]
+        if size >= threshold:
+            CCV[color_index][0] += size
+        else:
+            CCV[color_index][1] += size
+    return CCV
 
 
-def getBandsAndBrightness(image: Image) -> tuple:
-    """Returns a tuple of the rainbow bands, the perceived brightness, and the proportion of vivid colors in the image"""
-    pixels = image.convert('RGB').getdata()
-    bandCenter = 360 // 30
-    allBands = dict.fromkeys(range(bandCenter), 0)
-    vividBands = dict.fromkeys(range(bandCenter), 0)
-    perceivedLuminance = 0.0
-    vividPixels = 0
-    for pixel in pixels:
-        rgb = normalizeColor(pixel)
-        h, s, Y = RGBtoHSY(rgb)
-        perceivedLuminance += Y
-        ab = ((h + 30) % 360) // 30
-        allBands[ab] += 1
-        if isVivid(s, Y):
-            vb = ((h + 30) % 360) // 30
-            vividBands[vb] += 1
-            vividPixels += 1
-    if sum(vividBands.values()) > 0:
-        bands = vividBands
-        bandPixels = vividPixels
-    else:
-        bands = allBands
-        bandPixels = len(pixels)
-    bands = {k: v / bandPixels for (k, v) in bands.items()}
-    perceivedLuminance = perceivedLuminance / len(pixels)
-    vividness = vividPixels / len(pixels)
-    return bands, perceivedLuminance, vividness
+def blob_extract(mac: ndarray) -> tuple:
+    """Extracts blobs from a MAC image"""
+    blob = zeros([mac.shape[0], mac.shape[1]]).astype('uint32').tolist()
+    n_blobs = 0
+    for index in range(0, len(MACBETH_LIST)):
+        count, labels = connectedComponents(
+            where(mac == index, 1, 0).astype('uint8'))
+        labels[labels > 0] += n_blobs
+        blob += labels
+        if count > 1:
+            n_blobs += (count - 1)
+    return n_blobs, blob
 
 
-def RGBtoHSY(rgb: tuple) -> tuple:
-    """Converts an RGB color tuple to a Hue, Saturation, and Perceived Luminance tuple"""
-    r, g, b = rgb
-    maxc = max(r, g, b)
-    minc = min(r, g, b)
-    sumc = (maxc + minc)
-    rangec = (maxc - minc)
-    mid = sumc / 2.0
-    if minc == maxc:
-        return 0.0, mid, 0.0
-    if mid <= 0.5:
-        s = rangec / sumc
-    else:
-        s = rangec / (2.0 - sumc)
-    rc = (maxc - r) / rangec
-    gc = (maxc - g) / rangec
-    bc = (maxc - b) / rangec
-    if r == maxc:
-        h = bc - gc
-    elif g == maxc:
-        h = 2.0 + rc - bc
-    else:
-        h = 4.0 + gc - rc
-    h = int((h / 6.0) % 1.0 * 360.0)
-    Y = 0.2126 * r ** 2.2 + 0.7152 * g ** 2.2 + 0.0722 * b ** 2.2
-    return h, s, Y
+def loop_sort(entries: list, func: callable) -> list:
+    """Sorts a list of entries by the function func"""
+    loop = []
+    for i in range(len(entries)):
+        if i == 0:
+            loop.append(entries.pop(0))
+        else:
+            a1 = loop[i - 1]
+            b1 = tuple(entries)
+            loop.append(entries.pop(find_minimum_looped(a1, b1, func)))
+    return loop
 
 
-def sortPlaylist(playlistID: str) -> None:
-    """Sorts a playlist by the MiniSOM algorithm"""
-    updateProgressBar(5)
-    playlistItems = getPlaylistItems(playlistID)
-    df = makeDataframe(playlistItems)
-    updateProgressBar(20)
-    df = PCAShift(df)
-    updateProgressBar(35)
-    sortedTrackIDs = miniSOMSort(shuffleAndNormalize(df))
-    updateProgressBar(65)
-    reorderPlaylist(playlistID, sortedTrackIDs)
-    updateProgressBar(0)
+def find_minimum_looped(p_entry: tuple, q_entries: tuple,
+                        func: callable) -> int:
+    """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
+    val = -1
+    p = p_entry[1]
+    minIndex = -1
+    for i in range(len(q_entries)):
+        q = q_entries[i][1]
+        f = func(p, tuple(q))
+        if val == -1 or f < val:
+            minIndex, val = i, f
+    return minIndex
+
+
+def rgb_to_mac(img: ndarray) -> any:
+    """Converts an RGB image to a MAC image"""
+    M = zeros([img.shape[0], img.shape[1]]).astype('uint32').tolist()
+    for i in range(0, img.shape[0]):
+        for j in range(0, img.shape[1]):
+            M[i][j] = int(find_minimum(('', tuple(img[i][j])), MACBETH_LIST,
+                                       lab_distance_3d))
+    return M
+
+
+@lru_cache(maxsize=None)
+def find_minimum(p_entry: tuple, q_entries: tuple,
+                 func: callable) -> int:
+    """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
+    val = -1
+    p = p_entry[1]
+    minIndex = -1
+    for i in range(len(q_entries)):
+        q = q_entries[i][1]
+        f = func(p, tuple(q))
+        if val == -1 or f < val:
+            minIndex, val = i, f
+    return minIndex
+
+
+@lru_cache(maxsize=None)
+def bgr_to_lab(v: tuple) -> tuple:
+    """Converts a BGR color to a LAB color"""
+    v = v[::-1]
+    RGB = [
+        100 * (((element / 255.0 + 0.055) / 1.055) ** 2.4 if element / 255.0 > 0.04045 else (element / 255.0) / 12.92)
+        for element in v]
+    RGB2XYZ_MAT = array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
+    XYZ = [round(element, 4) for element in matmul(RGB2XYZ_MAT, RGB)]
+    XYZ = matmul(array([[1 / 95.047, 0, 0], [0, 1 / 100.0, 0], [0, 0, 1 / 108.883]]), XYZ)
+    XYZ = [element ** 0.33333 if element > 0.008856 else 7.787 * element + 16.0 / 116 for element in XYZ]
+    XYZ2LAB_MAT = array([[0, 116, 0], [500, -500, 0], [0, 200, -200]])
+    return tuple([round(element, 4) for element in matmul(XYZ2LAB_MAT, XYZ) + array([-16, 0, 0])])
+
+
+@lru_cache(maxsize=None)
+def distance_3d(A: tuple, B: tuple) -> float:
+    """Calculates the distance between two 3D points"""
+    return ((A[0] - B[0]) ** 2.0 + (A[1] - B[1]) ** 2.0 + (A[2] - B[2]) ** 2.0) ** 0.5
+
+
+@lru_cache(maxsize=None)
+def lab_distance_3d(A: tuple, B: tuple) -> float:
+    """Calculates the distance between two LAB colors"""
+    return distance_3d(bgr_to_lab(tuple(A)), bgr_to_lab(tuple(B)))
+
+
+def pil_to_cv2(img: Image) -> ndarray:
+    """Converts a PIL image to a CV2 image"""
+    return cvtColor(array(img), COLOR_RGB2BGR)
+
+
+def ccv_distance(V1: list, V2: list) -> ndarray:
+    """Calculates the distance between two CCV vectors"""
+    return sum([3 * abs(V1[i][0] - V2[i][0]) + abs(V1[i][1] - V2[i][1]) for i in range(0, len(V1))])
+
+
+class App:
+    def __init__(self):
+        self.window = Tk()
+        self.window.title("Spotify Playlist Sorter")
+        self.window.geometry('210x100')
+        self.playlistNames = []
+        for playLists in playlists['items']:
+            self.playlistNames.append(playLists['name'])
+        self.clicked = StringVar()
+        self.clicked.set(self.playlistNames[0])
+        drop = OptionMenu(self.window, self.clicked, *self.playlistNames)
+        drop.pack()
+        sortButton = Button(self.window, text="Sort",
+                            command=lambda: sort_playlist(self, get_playlist_id(self.clicked.get())))
+        sortButton.pack()
+        self.progress = ttk.Progressbar(self.window, orient=HORIZONTAL, length=200, mode='determinate')
+        self.progress.pack()
+        self.window.mainloop()
+
+    def updateProgressBar(self, value):
+        self.progress['value'] = value
+        self.window.update_idletasks()
 
 
 if __name__ == '__main__':
-    createUI()
-
-# TODO, Convert DataFrame to Polar instead of Pandas
+    app = App()
