@@ -1,7 +1,9 @@
 from PIL import Image
+from queue import Queue
 from tkinter import ttk
 from requests import get
 from spotipy import Spotify
+from threading import Thread
 from functools import lru_cache
 from spotipy.oauth2 import SpotifyOAuth
 from numpy import sum, ndarray, array, zeros, matmul, where
@@ -10,8 +12,8 @@ from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
-sp = Spotify(auth_manager=SpotifyOAuth(client_id="37c0cd0d045d4728995a345cd3de949a",
-                                       client_secret="914c47f811ff4d3ca6dc160ed8fe3f3b",
+sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
+                                       client_secret="",
                                        redirect_uri="https://example.com",
                                        scope="user-library-modify playlist-modify-public ugc-image-upload "
                                              "playlist-modify-private user-library-read"))
@@ -70,44 +72,6 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
                 break
     else:
         sp.playlist_add_items(playlistID, sortedTrackIDs, offset)
-
-
-def make_ccv_collection(uiHook, playlistItems: tuple, data: callable) -> list:
-    """Returns a list of tuples containing the track IDs and the """
-    total = len(playlistItems)
-    tupleCollection = []
-    for ix, item in enumerate(playlistItems):
-        uiHook.updateProgressBar(20 + (ix / total) * 50)
-        track = item['track']
-        trackID = track['id']
-        url = track['album']['images'][-1]['url']
-        trackImage = Image.open(get(url, stream=True).raw).resize((16, 16))
-        trackImage = pil_to_cv2(trackImage)
-        tupleCollection.append((trackID, data(trackImage)))
-    return tupleCollection
-
-
-def ccv_sort(uiHook, playlistID: str) -> list:
-    """Sorts a playlist without using the MiniSOM algorithm, instead using either average, dominant, histogram,
-    or ccv"""
-    entries = make_ccv_collection(uiHook, get_playlist_items(playlistID), ccv)
-    uiHook.updateProgressBar(70)
-    loop = loop_sort(entries, ccv_distance)
-    images = []
-    uiHook.updateProgressBar(80)
-    for i in range(0, len(loop)):
-        uri = loop[i][0]
-        images.append(uri)
-    return images
-
-
-def sort_playlist(uiHook, playlistID: str) -> None:
-    """Sorts a playlist by the given algorithm"""
-    uiHook.updateProgressBar(20)
-    sortedTrackIDs = ccv_sort(uiHook, playlistID)
-    uiHook.updateProgressBar(90)
-    reorder_playlist(playlistID, sortedTrackIDs)
-    uiHook.updateProgressBar(0)
 
 
 def ccv(img: ndarray) -> list:
@@ -246,15 +210,67 @@ class App:
         drop = OptionMenu(self.window, self.clicked, *self.playlistNames)
         drop.pack()
         sortButton = Button(self.window, text="Sort",
-                            command=lambda: sort_playlist(self, get_playlist_id(self.clicked.get())))
+                            command=lambda: self.sort_playlist(get_playlist_id(self.clicked.get())))
         sortButton.pack()
         self.progress = ttk.Progressbar(self.window, orient=HORIZONTAL, length=200, mode='determinate')
         self.progress.pack()
         self.window.mainloop()
 
     def updateProgressBar(self, value):
+        """Updates the progress bar to the given value"""""
         self.progress['value'] = value
         self.window.update_idletasks()
+
+    def ccv_sort(self, playlistID: str) -> list:
+        """Sorts a playlist without using the MiniSOM algorithm, instead using either average, dominant, histogram,
+        or ccv"""
+        entries = self.make_ccv_collection(get_playlist_items(playlistID), ccv)
+        self.updateProgressBar(70)
+        loop = loop_sort(entries, ccv_distance)
+        images = []
+        self.updateProgressBar(80)
+        for i in range(0, len(loop)):
+            uri = loop[i][0]
+            images.append(uri)
+        return images
+
+    def make_ccv_collection(self, playlistItems: tuple, data: callable) -> list:
+        """Returns a list of tuples containing the track IDs and the """
+        total = len(playlistItems)
+        tupleCollection = []
+        resultQueue = Queue()
+
+        def process_item(toProcess: dict) -> None:
+            """Processes an item in the playlistItems list"""
+            track = toProcess['track']
+            trackID = track['id']
+            url = track['album']['images'][-1]['url']
+            trackImage = Image.open(get(url, stream=True).raw).resize((16, 16))
+            trackImage = pil_to_cv2(trackImage)
+            resultQueue.put((trackID, data(trackImage)))
+
+        threads = []
+        for ix, item in enumerate(playlistItems):
+            self.updateProgressBar(20 + (ix / total) * 50)
+            t = Thread(target=process_item, args=(item,))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        while not resultQueue.empty():
+            tupleCollection.append(resultQueue.get())
+
+        return tupleCollection
+
+    def sort_playlist(self, playlistID: str) -> None:
+        """Sorts a playlist by the given algorithm"""
+        self.updateProgressBar(20)
+        sortedTrackIDs = self.ccv_sort(playlistID)
+        self.updateProgressBar(90)
+        reorder_playlist(playlistID, sortedTrackIDs)
+        self.updateProgressBar(0)
 
 
 if __name__ == '__main__':
