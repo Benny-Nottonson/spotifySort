@@ -4,7 +4,7 @@ from tkinter import ttk
 from requests import get
 from spotipy import Spotify
 from threading import Thread
-from functools import lru_cache
+from functools import cache
 from spotipy.oauth2 import SpotifyOAuth
 from numpy import sum, ndarray, array, zeros, matmul, where
 from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
@@ -19,15 +19,6 @@ sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
                                              "playlist-modify-private user-library-read"))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
-
-MACBETH_LIST = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)), ('blue sky', (98, 122, 157)),
-                ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)), ('bluish green', (103, 189, 170)),
-                ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)), ('moderate red', (193, 90, 99)),
-                ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)), ('orange yellow', (224, 163, 46)),
-                ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)), ('yellow', (231, 199, 31)),
-                ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)), ('white 9.5', (243, 243, 242)),
-                ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)), ('neutral 5', (122, 122, 121)),
-                ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
 
 
 def get_playlist_id(playlistName: str) -> str:
@@ -83,7 +74,7 @@ def ccv(img: ndarray) -> list:
     for i in range(0, blob.shape[0]):
         for j in range(0, blob.shape[1]):
             table[blob[i][j] - 1] = [mac[i][j], table[blob[i][j] - 1][1] + 1]
-    CCV = [[0, 0] for _ in range(0, len(MACBETH_LIST))]
+    CCV = [[0, 0] for _ in range(0, 24)]
     for entry in table:
         color_index = entry[0]
         size = entry[1]
@@ -98,7 +89,7 @@ def blob_extract(mac: ndarray) -> tuple:
     """Extracts blobs from a MAC image"""
     blob = zeros([mac.shape[0], mac.shape[1]]).astype('uint32').tolist()
     n_blobs = 0
-    for index in range(0, len(MACBETH_LIST)):
+    for index in range(0, 24):
         count, labels = connectedComponents(
             where(mac == index, 1, 0).astype('uint8'))
         labels[labels > 0] += n_blobs
@@ -140,12 +131,27 @@ def rgb_to_mac(img: ndarray) -> any:
     M = zeros([img.shape[0], img.shape[1]]).astype('uint32').tolist()
     for i in range(0, img.shape[0]):
         for j in range(0, img.shape[1]):
-            M[i][j] = int(find_minimum(('', tuple(img[i][j])), MACBETH_LIST,
+            M[i][j] = int(find_minimum(('', tuple(img[i][j])),
+                                       (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
+                                        ('blue sky', (98, 122, 157)),
+                                        ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
+                                        ('bluish green', (103, 189, 170)),
+                                        ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
+                                        ('moderate red', (193, 90, 99)),
+                                        ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
+                                        ('orange yellow', (224, 163, 46)),
+                                        ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
+                                        ('yellow', (231, 199, 31)),
+                                        ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
+                                        ('white 9.5', (243, 243, 242)),
+                                        ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
+                                        ('neutral 5', (122, 122, 121)),
+                                        ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52))),
                                        lab_distance_3d))
     return M
 
 
-@lru_cache(maxsize=None)
+@cache
 def find_minimum(p_entry: tuple, q_entries: tuple,
                  func: callable) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
@@ -160,7 +166,7 @@ def find_minimum(p_entry: tuple, q_entries: tuple,
     return minIndex
 
 
-@lru_cache(maxsize=None)
+@cache
 def bgr_to_lab(v: tuple) -> tuple:
     """Converts a BGR color to a LAB color"""
     v = v[::-1]
@@ -175,16 +181,12 @@ def bgr_to_lab(v: tuple) -> tuple:
     return tuple([round(element, 4) for element in matmul(XYZ2LAB_MAT, XYZ) + array([-16, 0, 0])])
 
 
-@lru_cache(maxsize=None)
-def distance_3d(A: tuple, B: tuple) -> float:
-    """Calculates the distance between two 3D points"""
-    return ((A[0] - B[0]) ** 2.0 + (A[1] - B[1]) ** 2.0 + (A[2] - B[2]) ** 2.0) ** 0.5
-
-
-@lru_cache(maxsize=None)
+@cache
 def lab_distance_3d(A: tuple, B: tuple) -> float:
     """Calculates the distance between two LAB colors"""
-    return distance_3d(bgr_to_lab(tuple(A)), bgr_to_lab(tuple(B)))
+    return ((bgr_to_lab(tuple(A))[0] - bgr_to_lab(tuple(B))[0]) ** 2.0 +
+            (bgr_to_lab(tuple(A))[1] - bgr_to_lab(tuple(B))[1]) ** 2.0 +
+            (bgr_to_lab(tuple(A))[2] - bgr_to_lab(tuple(B))[2]) ** 2.0) ** 0.5
 
 
 def pil_to_cv2(img: Image) -> ndarray:
@@ -245,8 +247,7 @@ class App:
             track = toProcess['track']
             trackID = track['id']
             url = track['album']['images'][-1]['url']
-            trackImage = Image.open(get(url, stream=True).raw).resize((16, 16))
-            trackImage = pil_to_cv2(trackImage)
+            trackImage = pil_to_cv2(Image.open(get(url, stream=True).raw).resize((64, 64)))
             resultQueue.put((trackID, data(trackImage)))
 
         threads = []
