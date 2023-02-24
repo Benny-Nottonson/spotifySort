@@ -88,8 +88,7 @@ def blob_extract(mac: ndarray) -> tuple:
     blob = zeros([mac.shape[0], mac.shape[1]]).astype('uint32').tolist()
     n_blobs = 0
     for index in range(0, 24):
-        count, labels = connectedComponents(
-            where(mac == index, 1, 0).astype('uint8'))
+        count, labels = connectedComponents(where(mac == index, 1, 0).astype('uint8'))
         labels[labels > 0] += n_blobs
         blob += labels
         if count > 1:
@@ -97,21 +96,7 @@ def blob_extract(mac: ndarray) -> tuple:
     return n_blobs, blob
 
 
-def loop_sort(entries: list, func: callable) -> list:
-    """Sorts a list of entries by the function func"""
-    loop = []
-    for i in range(len(entries)):
-        if i == 0:
-            loop.append(entries.pop(0))
-        else:
-            a1 = loop[i - 1]
-            b1 = tuple(entries)
-            loop.append(entries.pop(find_minimum_looped(a1, b1, func)))
-    return loop
-
-
-def find_minimum_looped(p_entry: tuple, q_entries: tuple,
-                        func: callable) -> int:
+def find_minimum_looped(p_entry: tuple, q_entries: tuple, func: callable) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
     val = -1
     p = p_entry[1]
@@ -129,32 +114,29 @@ def rgb_to_mac(img: ndarray) -> any:
     M = zeros([img.shape[0], img.shape[1]]).astype('uint32').tolist()
     for i in range(0, img.shape[0]):
         for j in range(0, img.shape[1]):
-            M[i][j] = int(find_minimum(('', tuple(img[i][j])),
-                                       (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
-                                        ('blue sky', (98, 122, 157)),
-                                        ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
-                                        ('bluish green', (103, 189, 170)),
-                                        ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
-                                        ('moderate red', (193, 90, 99)),
-                                        ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
-                                        ('orange yellow', (224, 163, 46)),
-                                        ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
-                                        ('yellow', (231, 199, 31)),
-                                        ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
-                                        ('white 9.5', (243, 243, 242)),
-                                        ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
-                                        ('neutral 5', (122, 122, 121)),
-                                        ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52))),
-                                       lab_distance_3d))
+            M[i][j] = int(find_minimum(tuple(img[i][j]), lab_distance_3d))
     return M
 
 
 @cache
-def find_minimum(p_entry: tuple, q_entries: tuple,
-                 func: callable) -> int:
+def find_minimum(p: tuple, func: callable) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
+    q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
+                 ('blue sky', (98, 122, 157)),
+                 ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
+                 ('bluish green', (103, 189, 170)),
+                 ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
+                 ('moderate red', (193, 90, 99)),
+                 ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
+                 ('orange yellow', (224, 163, 46)),
+                 ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
+                 ('yellow', (231, 199, 31)),
+                 ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
+                 ('white 9.5', (243, 243, 242)),
+                 ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
+                 ('neutral 5', (122, 122, 121)),
+                 ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
     val = -1
-    p = p_entry[1]
     minIndex = -1
     for i in range(len(q_entries)):
         q = q_entries[i][1]
@@ -182,8 +164,7 @@ def bgr_to_lab(v: tuple) -> tuple:
 @cache
 def lab_distance_3d(A: tuple, B: tuple) -> float:
     """Calculates the distance between two LAB colors"""
-    A = bgr_to_lab(tuple(A))
-    B = bgr_to_lab(tuple(B))
+    A, B = bgr_to_lab(tuple(A)), bgr_to_lab(tuple(B))
     return ((A[0] - B[0]) ** 2.0) + ((A[1] - B[1]) ** 2.0) + ((A[2] - B[2]) ** 2.0) ** 0.5
 
 
@@ -202,9 +183,7 @@ class App:
         self.window = Tk()
         self.window.title("Spotify Playlist Sorter")
         self.window.geometry('210x100')
-        self.playlistNames = []
-        for playLists in playlists['items']:
-            self.playlistNames.append(playLists['name'])
+        self.playlistNames = [playList['name'] for playList in playlists['items']]
         self.clicked = StringVar()
         self.clicked.set(self.playlistNames[0])
         drop = OptionMenu(self.window, self.clicked, *self.playlistNames)
@@ -221,18 +200,27 @@ class App:
         self.progress['value'] = value
         self.window.update_idletasks()
 
+    def loop_sort(self, entries: list, func: callable) -> list:
+        """Sorts a list of entries by the function func"""
+        loop = []
+        length = len(entries)
+        for i in range(length):
+            if i == 0:
+                loop.append(entries.pop(0))
+            else:
+                a1 = loop[i - 1]
+                b1 = tuple(entries)
+                loop.append(entries.pop(find_minimum_looped(a1, b1, func)))
+            self.updateProgressBar(60 + (i / length) * 20)
+        return loop
+
     def ccv_sort(self, playlistID: str) -> list:
-        """Sorts a playlist without using the MiniSOM algorithm, instead using either average, dominant, histogram,
-        or ccv"""
+        """Sorts a playlist using CCVs"""
         entries = self.make_ccv_collection(get_playlist_items(playlistID), ccv)
-        self.updateProgressBar(70)
-        loop = loop_sort(entries, ccv_distance)
-        images = []
+        self.updateProgressBar(60)
+        loop = self.loop_sort(entries, ccv_distance)
         self.updateProgressBar(80)
-        for i in range(0, len(loop)):
-            uri = loop[i][0]
-            images.append(uri)
-        return images
+        return [loop[i][0] for i in range(0, len(loop))]
 
     def make_ccv_collection(self, playlistItems: tuple, data: callable) -> list:
         """Returns a list of tuples containing the track IDs and the """
@@ -250,7 +238,7 @@ class App:
 
         threads = []
         for ix, item in enumerate(playlistItems):
-            self.updateProgressBar(20 + (ix / total) * 50)
+            self.updateProgressBar(20 + (ix / total) * 40)
             t = Thread(target=process_item, args=(item,))
             threads.append(t)
             t.start()
