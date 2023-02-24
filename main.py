@@ -23,9 +23,7 @@ playlists = sp.current_user_playlists()
 
 def get_playlist_id(playlistName: str) -> str:
     """Returns the ID of a playlist, or None if it doesn't exist"""
-    for ids in playlists['items']:
-        if ids['name'] == playlistName:
-            return ids['id']
+    return next((ids['id'] for ids in playlists['items'] if ids['name'] == playlistName), None)
 
 
 def get_playlist_items(playlistID: str) -> tuple:
