@@ -184,9 +184,9 @@ def bgr_to_lab(v: tuple) -> tuple:
 @cache
 def lab_distance_3d(A: tuple, B: tuple) -> float:
     """Calculates the distance between two LAB colors"""
-    return ((bgr_to_lab(tuple(A))[0] - bgr_to_lab(tuple(B))[0]) ** 2.0 +
-            (bgr_to_lab(tuple(A))[1] - bgr_to_lab(tuple(B))[1]) ** 2.0 +
-            (bgr_to_lab(tuple(A))[2] - bgr_to_lab(tuple(B))[2]) ** 2.0) ** 0.5
+    A = bgr_to_lab(tuple(A))
+    B = bgr_to_lab(tuple(B))
+    return ((A[0] - B[0]) ** 2.0) + ((A[1] - B[1]) ** 2.0) + ((A[2] - B[2]) ** 2.0) ** 0.5
 
 
 def pil_to_cv2(img: Image) -> ndarray:
