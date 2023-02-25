@@ -10,6 +10,8 @@ from numpy import sum, ndarray, array, zeros, matmul, where
 from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 
+# TODO: Check for duplicate images and find a way to skip calculations for them until the end
+
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
 sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
