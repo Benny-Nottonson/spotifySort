@@ -28,8 +28,7 @@ def get_playlist_id(playlistName: str) -> str:
 
 def get_playlist_items(playlistID: str) -> tuple:
     """Returns a list of the items in a playlist"""
-    playlistResults = sp.playlist(playlistID, fields='name,tracks.total')
-    playlistLength = playlistResults['tracks']['total']
+    playlistLength = sp.playlist(playlistID, fields='name,tracks.total')['tracks']['total']
     offset = 0
     playlistItems = []
     while offset < playlistLength:
@@ -44,34 +43,34 @@ def get_playlist_items(playlistID: str) -> tuple:
 def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
     """Reorders a playlist to match the order of the sorted track IDs"""
     offset = 0
-    if len(sortedTrackIDs) > 100:
+    length = len(sortedTrackIDs)
+    if length > 100:
         while True:
             sp.playlist_remove_all_occurrences_of_items(playlistID, sortedTrackIDs[offset:offset + 100])
             offset += 100
-            if offset >= len(sortedTrackIDs):
+            if offset >= length:
                 break
     else:
         sp.playlist_remove_all_occurrences_of_items(playlist_id=playlistID, items=sortedTrackIDs)
     offset = 0
-    if len(sortedTrackIDs) > 100:
+    if length > 100:
         while True:
             sp.playlist_add_items(playlistID, sortedTrackIDs[offset:offset + 100], offset)
             offset += 100
-            if offset >= len(sortedTrackIDs):
+            if offset >= length:
                 break
     else:
         sp.playlist_add_items(playlistID, sortedTrackIDs, offset)
 
 
-def ccv(img: ndarray) -> list:
+def ccv(img: ndarray) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
     n_blobs, blob = blob_extract(array(mac))
     table = [[0, 0] for _ in range(0, n_blobs)]
-    for i in range(0, blob.shape[0]):
-        for j in range(0, blob.shape[1]):
-            table[blob[i][j] - 1] = [mac[i][j], table[blob[i][j] - 1][1] + 1]
+    table = [[mac[i][j], table[blob[i][j] - 1][1] + 1] if blob[i][j] != 0 else [0, 0] for i in range(blob.shape[0]) for
+             j in range(blob.shape[1])]
     CCV = [[0, 0] for _ in range(0, 24)]
     for entry in table:
         color_index = entry[0]
@@ -80,6 +79,7 @@ def ccv(img: ndarray) -> list:
             CCV[color_index][0] += size
         else:
             CCV[color_index][1] += size
+    CCV = tuple(tuple(entry) for entry in CCV)
     return CCV
 
 
@@ -96,46 +96,34 @@ def blob_extract(mac: ndarray) -> tuple:
     return n_blobs, blob
 
 
-def find_minimum_looped(p_entry: tuple, q_entries: tuple, func: callable) -> int:
-    """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
-    val = -1
-    p = p_entry[1]
-    minIndex = -1
-    for i in range(len(q_entries)):
-        q = q_entries[i][1]
-        f = func(p, tuple(q))
-        if val == -1 or f < val:
-            minIndex, val = i, f
-    return minIndex
-
-
-def rgb_to_mac(img: ndarray) -> any:
+def rgb_to_mac(img: ndarray) -> list:
     """Converts an RGB image to a MAC image"""
-    M = zeros([img.shape[0], img.shape[1]]).astype('uint32').tolist()
-    for i in range(0, img.shape[0]):
-        for j in range(0, img.shape[1]):
-            M[i][j] = int(find_minimum(tuple(img[i][j]), lab_distance_3d))
-    return M
+    return [[int(find_minimum(tuple(img[i][j]), lab_distance_3d)) for j in range(img.shape[1])]
+            for i in range(img.shape[0])]
 
 
 @cache
-def find_minimum(p: tuple, func: callable) -> int:
+def find_minimum(p_entry: tuple, func: callable, q_entries=None) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
-    q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
-                 ('blue sky', (98, 122, 157)),
-                 ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
-                 ('bluish green', (103, 189, 170)),
-                 ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
-                 ('moderate red', (193, 90, 99)),
-                 ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
-                 ('orange yellow', (224, 163, 46)),
-                 ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
-                 ('yellow', (231, 199, 31)),
-                 ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
-                 ('white 9.5', (243, 243, 242)),
-                 ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
-                 ('neutral 5', (122, 122, 121)),
-                 ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
+    if q_entries is None:
+        q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
+                     ('blue sky', (98, 122, 157)),
+                     ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
+                     ('bluish green', (103, 189, 170)),
+                     ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
+                     ('moderate red', (193, 90, 99)),
+                     ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
+                     ('orange yellow', (224, 163, 46)),
+                     ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
+                     ('yellow', (231, 199, 31)),
+                     ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
+                     ('white 9.5', (243, 243, 242)),
+                     ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
+                     ('neutral 5', (122, 122, 121)),
+                     ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
+        p = p_entry
+    else:
+        p = p_entry[1]
     val = -1
     minIndex = -1
     for i in range(len(q_entries)):
@@ -162,6 +150,11 @@ def bgr_to_lab(v: tuple) -> tuple:
 
 
 @cache
+def ccv_distance(V1: tuple, V2: tuple) -> ndarray:
+    """Calculates the distance between two CCV vectors"""
+    return sum([3 * abs(V1[i][0] - V2[i][0]) + abs(V1[i][1] - V2[i][1]) for i in range(0, len(V1))])
+
+
 def lab_distance_3d(A: tuple, B: tuple) -> float:
     """Calculates the distance between two LAB colors"""
     A, B = bgr_to_lab(tuple(A)), bgr_to_lab(tuple(B))
@@ -171,11 +164,6 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
 def pil_to_cv2(img: Image) -> ndarray:
     """Converts a PIL image to a CV2 image"""
     return cvtColor(array(img), COLOR_RGB2BGR)
-
-
-def ccv_distance(V1: list, V2: list) -> ndarray:
-    """Calculates the distance between two CCV vectors"""
-    return sum([3 * abs(V1[i][0] - V2[i][0]) + abs(V1[i][1] - V2[i][1]) for i in range(0, len(V1))])
 
 
 class App:
@@ -200,17 +188,19 @@ class App:
         self.progress['value'] = value
         self.window.update_idletasks()
 
-    def loop_sort(self, entries: list, func: callable) -> list:
+    def loop_sort(self, entries: tuple, func: callable) -> list:
         """Sorts a list of entries by the function func"""
+        entries = list(entries)
         loop = []
         length = len(entries)
+        find_minimum.cache_clear()
         for i in range(length):
             if i == 0:
                 loop.append(entries.pop(0))
             else:
                 a1 = loop[i - 1]
                 b1 = tuple(entries)
-                loop.append(entries.pop(find_minimum_looped(a1, b1, func)))
+                loop.append(entries.pop(find_minimum(a1, func, b1)))
             self.updateProgressBar(60 + (i / length) * 20)
         return loop
 
