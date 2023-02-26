@@ -19,6 +19,7 @@ sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
                                              "playlist-modify-private user-library-read"))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
+seen_images = {}
 
 
 def get_playlist_id(playlistName: str) -> str:
@@ -63,8 +64,12 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
         sp.playlist_add_items(playlistID, sortedTrackIDs, offset)
 
 
-def ccv(img: ndarray) -> tuple:
+def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
+    # Fix the bug that causes the cache to not work for duplicate urls
+    if img_url in seen_images:
+        return seen_images[img_url]
+    img = pil_to_cv2(Image.open(get(img_url, stream=True).raw).resize((64, 64)))
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
     n_blobs, blob = blob_extract(array(mac))
@@ -80,6 +85,7 @@ def ccv(img: ndarray) -> tuple:
         else:
             CCV[color_index][1] += size
     CCV = tuple(tuple(entry) for entry in CCV)
+    seen_images[img_url] = CCV
     return CCV
 
 
@@ -166,16 +172,6 @@ def pil_to_cv2(img: Image) -> ndarray:
     return cvtColor(array(img), COLOR_RGB2BGR)
 
 
-def add_associated_tracks(sortedTrackIDs: list, associated_uris: dict) -> list:
-    """Adds associated tracks to the sorted track IDs"""
-    final = []
-    for track_id in sortedTrackIDs:
-        final += [track_id]
-        if track_id in associated_uris and associated_uris[track_id] != []:
-            final.extend(associated_uris[track_id])
-    return final
-
-
 class App:
     def __init__(self):
         self.window = Tk()
@@ -214,34 +210,26 @@ class App:
             self.updateProgressBar(60 + (i / length) * 20)
         return loop
 
-    def ccv_sort(self, playlistID: str) -> tuple:
+    def ccv_sort(self, playlistID: str) -> list:
         """Sorts a playlist using CCVs"""
-        entries, associated_uris = self.make_ccv_collection(get_playlist_items(playlistID), ccv)
+        entries = self.make_ccv_collection(get_playlist_items(playlistID), ccv)
         self.updateProgressBar(60)
         loop = self.loop_sort(entries, ccv_distance)
         self.updateProgressBar(80)
-        return [loop[i][0] for i in range(0, len(loop))], associated_uris
+        return [loop[i][0] for i in range(0, len(loop))]
 
-    def make_ccv_collection(self, playlistItems: tuple, data: callable) -> tuple:
+    def make_ccv_collection(self, playlistItems: tuple, data: callable) -> list:
         """Returns a list of tuples containing the track IDs and the """
         total = len(playlistItems)
         tupleCollection = []
         resultQueue = Queue()
-        seen_images = {}
-        associated_uris = {}
 
         def process_item(toProcess: dict) -> None:
             """Processes an item in the playlistItems list"""
             track = toProcess['track']
             trackID = track['id']
             url = track['album']['images'][-1]['url']
-            if url in seen_images:
-                associated_uris[seen_images[url]].append(trackID)
-            else:
-                seen_images[url] = trackID
-                associated_uris[trackID] = []
-                trackImage = pil_to_cv2(Image.open(get(url, stream=True).raw).resize((64, 64)))
-                resultQueue.put((trackID, data(trackImage)))
+            resultQueue.put((trackID, data(url)))
 
         threads = []
         for ix, item in enumerate(playlistItems):
@@ -256,13 +244,12 @@ class App:
         while not resultQueue.empty():
             tupleCollection.append(resultQueue.get())
 
-        return tupleCollection, associated_uris
+        return tupleCollection
 
     def sort_playlist(self, playlistID: str) -> None:
         """Sorts a playlist by the given algorithm"""
         self.updateProgressBar(20)
-        sortedTrackIDs, associated_uris = self.ccv_sort(playlistID)
-        sortedTrackIDs = add_associated_tracks(sortedTrackIDs, associated_uris)
+        sortedTrackIDs = self.ccv_sort(playlistID)
         self.updateProgressBar(90)
         reorder_playlist(playlistID, sortedTrackIDs)
         self.updateProgressBar(0)
