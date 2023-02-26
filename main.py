@@ -10,8 +10,6 @@ from numpy import sum, ndarray, array, zeros, matmul, where
 from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
 
-# TODO: Check for duplicate images and find a way to skip calculations for them until the end
-
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
 sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
@@ -168,6 +166,16 @@ def pil_to_cv2(img: Image) -> ndarray:
     return cvtColor(array(img), COLOR_RGB2BGR)
 
 
+def add_associated_tracks(sortedTrackIDs: list, associated_uris: dict) -> list:
+    """Adds associated tracks to the sorted track IDs"""
+    final = []
+    for track_id in sortedTrackIDs:
+        final += [track_id]
+        if track_id in associated_uris and associated_uris[track_id] != []:
+            final.extend(associated_uris[track_id])
+    return final
+
+
 class App:
     def __init__(self):
         self.window = Tk()
@@ -206,27 +214,34 @@ class App:
             self.updateProgressBar(60 + (i / length) * 20)
         return loop
 
-    def ccv_sort(self, playlistID: str) -> list:
+    def ccv_sort(self, playlistID: str) -> tuple:
         """Sorts a playlist using CCVs"""
-        entries = self.make_ccv_collection(get_playlist_items(playlistID), ccv)
+        entries, associated_uris = self.make_ccv_collection(get_playlist_items(playlistID), ccv)
         self.updateProgressBar(60)
         loop = self.loop_sort(entries, ccv_distance)
         self.updateProgressBar(80)
-        return [loop[i][0] for i in range(0, len(loop))]
+        return [loop[i][0] for i in range(0, len(loop))], associated_uris
 
-    def make_ccv_collection(self, playlistItems: tuple, data: callable) -> list:
+    def make_ccv_collection(self, playlistItems: tuple, data: callable) -> tuple:
         """Returns a list of tuples containing the track IDs and the """
         total = len(playlistItems)
         tupleCollection = []
         resultQueue = Queue()
+        seen_images = {}
+        associated_uris = {}
 
         def process_item(toProcess: dict) -> None:
             """Processes an item in the playlistItems list"""
             track = toProcess['track']
             trackID = track['id']
             url = track['album']['images'][-1]['url']
-            trackImage = pil_to_cv2(Image.open(get(url, stream=True).raw).resize((64, 64)))
-            resultQueue.put((trackID, data(trackImage)))
+            if url in seen_images:
+                associated_uris[seen_images[url]].append(trackID)
+            else:
+                seen_images[url] = trackID
+                associated_uris[trackID] = []
+                trackImage = pil_to_cv2(Image.open(get(url, stream=True).raw).resize((64, 64)))
+                resultQueue.put((trackID, data(trackImage)))
 
         threads = []
         for ix, item in enumerate(playlistItems):
@@ -241,12 +256,13 @@ class App:
         while not resultQueue.empty():
             tupleCollection.append(resultQueue.get())
 
-        return tupleCollection
+        return tupleCollection, associated_uris
 
     def sort_playlist(self, playlistID: str) -> None:
         """Sorts a playlist by the given algorithm"""
         self.updateProgressBar(20)
-        sortedTrackIDs = self.ccv_sort(playlistID)
+        sortedTrackIDs, associated_uris = self.ccv_sort(playlistID)
+        sortedTrackIDs = add_associated_tracks(sortedTrackIDs, associated_uris)
         self.updateProgressBar(90)
         reorder_playlist(playlistID, sortedTrackIDs)
         self.updateProgressBar(0)
