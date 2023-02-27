@@ -66,7 +66,6 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
 
 def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
-    # Fix the bug that causes the cache to not work for duplicate urls
     if img_url in seen_images:
         return seen_images[img_url]
     img = pil_to_cv2(Image.open(get(img_url, stream=True).raw).resize((64, 64)))
