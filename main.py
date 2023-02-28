@@ -1,6 +1,5 @@
 from PIL import Image
 from queue import Queue
-from tkinter import ttk
 from requests import get
 from spotipy import Spotify
 from threading import Thread
@@ -8,7 +7,7 @@ from functools import cache
 from spotipy.oauth2 import SpotifyOAuth
 from numpy import sum, ndarray, array, zeros, matmul, where
 from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
-from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL
+from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
