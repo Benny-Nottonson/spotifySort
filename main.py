@@ -1,6 +1,6 @@
 from PIL import Image
 from queue import Queue
-from requests import get
+from urllib import urlopen
 from spotipy import Spotify
 from threading import Thread
 from functools import cache
@@ -67,7 +67,7 @@ def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
     if img_url in seen_images:
         return seen_images[img_url]
-    img = pil_to_cv2(Image.open(get(img_url, stream=True).raw).resize((64, 64)))
+    img = get_image_from_url(img_url)
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
     n_blobs, blob = blob_extract(array(mac))
@@ -165,9 +165,12 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
     return ((A[0] - B[0]) ** 2.0) + ((A[1] - B[1]) ** 2.0) + ((A[2] - B[2]) ** 2.0) ** 0.5
 
 
-def pil_to_cv2(img: Image) -> ndarray:
+def get_image_from_url(url: str) -> ndarray:
     """Converts a PIL image to a CV2 image"""
-    return cvtColor(array(img), COLOR_RGB2BGR)
+    url_response = urlopen(url)
+    img_array = np.array(bytearray(url_response.read()), dtype=np.uint8)
+    img = cv2.imdecode(img_array, -1)
+    return cvtColor(img, COLOR_RGB2BGR)
 
 
 class App:
