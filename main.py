@@ -1,4 +1,3 @@
-from PIL import Image
 from queue import Queue
 from urllib import urlopen
 from spotipy import Spotify
