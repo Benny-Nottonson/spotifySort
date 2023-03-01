@@ -1,5 +1,5 @@
 from queue import Queue
-from urllib import urlopen
+from skimage import io
 from spotipy import Spotify
 from threading import Thread
 from functools import cache
@@ -166,10 +166,7 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
 
 def get_image_from_url(url: str) -> ndarray:
     """Converts a PIL image to a CV2 image"""
-    url_response = urlopen(url)
-    img_array = np.array(bytearray(url_response.read()), dtype=np.uint8)
-    img = cv2.imdecode(img_array, -1)
-    return cvtColor(img, COLOR_RGB2BGR)
+    return cvtColor(io.imread(url), COLOR_RGB2BGR)
 
 
 class App:
