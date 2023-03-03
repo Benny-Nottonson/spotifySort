@@ -18,6 +18,7 @@ sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 seen_images = {}
+seen_urls = set()
 
 
 def get_playlist_id(playlistName: str) -> str:
@@ -65,8 +66,9 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
 def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
     # Fix the bug that causes the cache to not work for duplicate urls
-    if img_url in seen_images:
-        return seen_images[img_url]
+    if img_url in seen_urls:
+        return img_url
+    seen_urls.add(img_url)
     img = get_image_from_url(img_url)
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
@@ -241,6 +243,10 @@ class App:
 
         while not resultQueue.empty():
             tupleCollection.append(resultQueue.get())
+
+        for i in range(len(tupleCollection)):
+            if type(tupleCollection[i][1]) == str:
+                tupleCollection[i] = (tupleCollection[i][0], seen_images[tupleCollection[i][1]])
 
         return tupleCollection
 
