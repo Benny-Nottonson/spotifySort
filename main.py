@@ -1,8 +1,8 @@
 from queue import Queue
-from skimage.io import imread
 from spotipy import Spotify
-from threading import Thread
 from functools import cache
+from threading import Thread
+from skimage.io import imread
 from spotipy.oauth2 import SpotifyOAuth
 from numpy import sum, ndarray, array, zeros, matmul, where
 from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents, resize
