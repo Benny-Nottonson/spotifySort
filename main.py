@@ -5,7 +5,7 @@ from threading import Thread
 from functools import cache
 from spotipy.oauth2 import SpotifyOAuth
 from numpy import sum, ndarray, array, zeros, matmul, where
-from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
+from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents, resize
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
@@ -64,6 +64,7 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
 
 def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
+    # Fix the bug that causes the cache to not work for duplicate urls
     if img_url in seen_images:
         return seen_images[img_url]
     img = get_image_from_url(img_url)
@@ -166,7 +167,7 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
 
 def get_image_from_url(url: str) -> ndarray:
     """Converts a PIL image to a CV2 image"""
-    return cvtColor(io.imread(url), COLOR_RGB2BGR)
+    return resize(cvtColor(io.imread(url), COLOR_RGB2BGR), (32, 32))
 
 
 class App:
