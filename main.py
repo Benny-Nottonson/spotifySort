@@ -1,5 +1,5 @@
 from queue import Queue
-from skimage import io
+from skimage.io import imread
 from spotipy import Spotify
 from threading import Thread
 from functools import cache
@@ -167,7 +167,7 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
 
 def get_image_from_url(url: str) -> ndarray:
     """Converts a PIL image to a CV2 image"""
-    return resize(cvtColor(io.imread(url), COLOR_RGB2BGR), (32, 32))
+    return resize(cvtColor(imread(url), COLOR_RGB2BGR), (32, 32))
 
 
 class App:
