@@ -1,12 +1,11 @@
-from PIL import Image
 from queue import Queue
-from requests import get
+from skimage import io
 from spotipy import Spotify
 from threading import Thread
 from functools import cache
 from spotipy.oauth2 import SpotifyOAuth
 from numpy import sum, ndarray, array, zeros, matmul, where
-from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents
+from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents, resize
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
@@ -65,9 +64,10 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
 
 def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
+    # Fix the bug that causes the cache to not work for duplicate urls
     if img_url in seen_images:
         return seen_images[img_url]
-    img = pil_to_cv2(Image.open(get(img_url, stream=True).raw).resize((64, 64)))
+    img = get_image_from_url(img_url)
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
     n_blobs, blob = blob_extract(array(mac))
@@ -165,9 +165,9 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
     return ((A[0] - B[0]) ** 2.0) + ((A[1] - B[1]) ** 2.0) + ((A[2] - B[2]) ** 2.0) ** 0.5
 
 
-def pil_to_cv2(img: Image) -> ndarray:
+def get_image_from_url(url: str) -> ndarray:
     """Converts a PIL image to a CV2 image"""
-    return cvtColor(array(img), COLOR_RGB2BGR)
+    return resize(cvtColor(io.imread(url), COLOR_RGB2BGR), (32, 32))
 
 
 class App:
