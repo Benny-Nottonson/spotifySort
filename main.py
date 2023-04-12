@@ -2,23 +2,21 @@ from queue import Queue
 from spotipy import Spotify
 from functools import cache
 from threading import Thread
-from skimage.io import imread
+from urllib import request
 from spotipy.oauth2 import SpotifyOAuth
-from numpy import sum, ndarray, array, zeros, matmul, where
-from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents, resize
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
+from numpy import sum, ndarray, array, zeros, matmul, where, asarray, mean
+from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents, resize, imdecode
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
+scope = "user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private user-library-read"
 sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
                                        client_secret="",
                                        redirect_uri="https://example.com",
-                                       scope="user-library-modify playlist-modify-public ugc-image-upload "
-                                             "playlist-modify-private user-library-read"))
+                                       scope=scope))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
-seen_images = {}
-seen_urls = set()
 
 
 def get_playlist_id(playlistName: str) -> str:
@@ -65,9 +63,6 @@ def reorder_playlist(playlistID: str, sortedTrackIDs: list) -> None:
 
 def ccv(img_url: str) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
-    if img_url in seen_urls:
-        return img_url
-    seen_urls.add(img_url)
     img = get_image_from_url(img_url)
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
@@ -84,7 +79,6 @@ def ccv(img_url: str) -> tuple:
         else:
             CCV[color_index][1] += size
     CCV = tuple(tuple(entry) for entry in CCV)
-    seen_images[img_url] = CCV
     return CCV
 
 
@@ -103,39 +97,37 @@ def blob_extract(mac: ndarray) -> tuple:
 
 def rgb_to_mac(img: ndarray) -> list:
     """Converts an RGB image to a MAC image"""
-    return [[int(find_minimum(tuple(img[i][j]), lab_distance_3d)) for j in range(img.shape[1])]
+    return [[int(find_minimum_macbeth(tuple(img[i][j]), lab_distance_3d)) for j in range(img.shape[1])]
             for i in range(img.shape[0])]
 
 
 @cache
+def find_minimum_macbeth(p_entry: tuple, func: callable) -> int:
+    """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
+    q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
+                 ('blue sky', (98, 122, 157)),
+                 ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
+                 ('bluish green', (103, 189, 170)),
+                 ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
+                 ('moderate red', (193, 90, 99)),
+                 ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
+                 ('orange yellow', (224, 163, 46)),
+                 ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
+                 ('yellow', (231, 199, 31)),
+                 ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
+                 ('white 9.5', (243, 243, 242)),
+                 ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
+                 ('neutral 5', (122, 122, 121)),
+                 ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
+    p = p_entry
+    minIndex, _ = min(enumerate([func(p, tuple(q[1])) for q in q_entries]), key=lambda x: x[1])
+    return minIndex
+
+
 def find_minimum(p_entry: tuple, func: callable, q_entries=None) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
-    if q_entries is None:
-        q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
-                     ('blue sky', (98, 122, 157)),
-                     ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
-                     ('bluish green', (103, 189, 170)),
-                     ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
-                     ('moderate red', (193, 90, 99)),
-                     ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
-                     ('orange yellow', (224, 163, 46)),
-                     ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
-                     ('yellow', (231, 199, 31)),
-                     ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
-                     ('white 9.5', (243, 243, 242)),
-                     ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
-                     ('neutral 5', (122, 122, 121)),
-                     ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
-        p = p_entry
-    else:
-        p = p_entry[1]
-    val = -1
-    minIndex = -1
-    for i in range(len(q_entries)):
-        q = q_entries[i][1]
-        f = func(p, tuple(q))
-        if val == -1 or f < val:
-            minIndex, val = i, f
+    p = p_entry[1]
+    minIndex, val = min(enumerate(q_entries), key=lambda x: func(p, x[1][1]))
     return minIndex
 
 
@@ -151,7 +143,8 @@ def bgr_to_lab(v: tuple) -> tuple:
     XYZ = matmul(array([[1 / 95.047, 0, 0], [0, 1 / 100.0, 0], [0, 0, 1 / 108.883]]), XYZ)
     XYZ = [element ** 0.33333 if element > 0.008856 else 7.787 * element + 16.0 / 116 for element in XYZ]
     XYZ2LAB_MAT = array([[0, 116, 0], [500, -500, 0], [0, 200, -200]])
-    return tuple([round(element, 4) for element in matmul(XYZ2LAB_MAT, XYZ) + array([-16, 0, 0])])
+    final = tuple([round(element, 4) for element in matmul(XYZ2LAB_MAT, XYZ) + array([-16, 0, 0])])
+    return final
 
 
 @cache
@@ -166,9 +159,57 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
     return ((A[0] - B[0]) ** 2.0) + ((A[1] - B[1]) ** 2.0) + ((A[2] - B[2]) ** 2.0) ** 0.5
 
 
+@cache
 def get_image_from_url(url: str) -> ndarray:
-    """Converts a PIL image to a CV2 image"""
-    return resize(cvtColor(imread(url), COLOR_RGB2BGR), (32, 32))
+    """Gets an image from a URL and converts it to BGR"""
+    image = request.urlopen(url).read()
+    image = imdecode(asarray(bytearray(image), dtype='uint8'), -1)
+    return resize(cvtColor(image, COLOR_RGB2BGR), (24, 24))
+
+
+def reSort(loop, func, total):
+    n_loop = [(i,) + tpl[1:] for i, tpl in enumerate(loop)]
+    loop_length = len(n_loop)
+    distance_matrix = zeros((loop_length, loop_length))
+    for i in range(loop_length):
+        for j in range(i):
+            distance_matrix[i][j] = distance_matrix[j][i] = func(n_loop[i][1], n_loop[j][1])
+    max_pass_count = 150
+    pass_count = 0
+    while pass_count < max_pass_count:
+        moving_loop_entry = n_loop.pop(-1)
+        moving_index = moving_loop_entry[0]
+        minIndex = -1
+        val = -1
+        for i in range(loop_length - 1):
+            if i == 0 or i == loop_length - 1:
+                behind_index = n_loop[loop_length - 2][0]
+                ahead_index = n_loop[0][0]
+                avg_of_distances = mean(
+                    [distance_matrix[behind_index, moving_index], distance_matrix[ahead_index, moving_index]])
+            else:
+                behind_index = n_loop[i - 1][0]
+                ahead_index = n_loop[i][0]
+                avg_of_distances = mean(
+                    [distance_matrix[behind_index, moving_index], distance_matrix[ahead_index, moving_index]])
+            n_loop_test = n_loop[:i] + [moving_loop_entry] + n_loop[i:]
+            N = len(n_loop_test)
+            total_distance = sum([distance_matrix[n_loop_test[k - 1][0], n_loop_test[k][0]] for k in range(N)])
+            if total:
+                if minIndex == -1 or total_distance < val:
+                    val = total_distance
+                    minIndex = i
+            else:
+                if minIndex == -1 or avg_of_distances < val:
+                    val = avg_of_distances
+                    minIndex = i
+        if minIndex == loop_length - 1:
+            n_loop.append(moving_loop_entry)
+        else:
+            n_loop.insert(minIndex, moving_loop_entry)
+        pass_count += 1
+    new_loop = [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
+    return new_loop
 
 
 class App:
@@ -198,7 +239,6 @@ class App:
         entries = list(entries)
         loop = []
         length = len(entries)
-        find_minimum.cache_clear()
         for i in range(length):
             if i == 0:
                 loop.append(entries.pop(0))
@@ -215,6 +255,7 @@ class App:
         self.updateProgressBar(60)
         loop = self.loop_sort(entries, ccv_distance)
         self.updateProgressBar(80)
+        loop = reSort(loop, ccv_distance, True)
         return [loop[i][0] for i in range(0, len(loop))]
 
     def make_ccv_collection(self, playlistItems: tuple, data: callable) -> list:
@@ -243,10 +284,6 @@ class App:
         while not resultQueue.empty():
             tupleCollection.append(resultQueue.get())
 
-        for i in range(len(tupleCollection)):
-            if type(tupleCollection[i][1]) == str:
-                tupleCollection[i] = (tupleCollection[i][0], seen_images[tupleCollection[i][1]])
-
         return tupleCollection
 
     def sort_playlist(self, playlistID: str) -> None:
@@ -256,6 +293,7 @@ class App:
         self.updateProgressBar(90)
         reorder_playlist(playlistID, sortedTrackIDs)
         self.updateProgressBar(0)
+        ccv_distance.cache_clear()
 
 
 if __name__ == '__main__':
