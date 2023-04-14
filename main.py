@@ -1,12 +1,17 @@
+from PIL import Image
+from io import BytesIO
 from queue import Queue
+from requests import get
 from spotipy import Spotify
 from functools import cache
-from threading import Thread
-from urllib import request
+from collections import deque
+from skimage.measure import label
 from spotipy.oauth2 import SpotifyOAuth
+from cv2 import cvtColor, COLOR_RGB2BGR, resize
+from concurrent.futures import ThreadPoolExecutor
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
-from numpy import sum, ndarray, array, zeros, matmul, where, asarray, mean
-from cv2 import cvtColor, COLOR_RGB2BGR, connectedComponents, resize, imdecode
+from numpy import sum, ndarray, array, zeros, matmul, max, bincount, count_nonzero
+
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and create an app to get
 # the Client ID and Client Secret
@@ -67,31 +72,23 @@ def ccv(img_url: str) -> tuple:
     threshold = round(0.01 * img.shape[0] * img.shape[1])
     mac = rgb_to_mac(img)
     n_blobs, blob = blob_extract(array(mac))
-    table = [[0, 0] for _ in range(0, n_blobs)]
     table = [[mac[i][j], table[blob[i][j] - 1][1] + 1] if blob[i][j] != 0 else [0, 0] for i in range(blob.shape[0]) for
-             j in range(blob.shape[1])]
-    CCV = [[0, 0] for _ in range(0, 24)]
-    for entry in table:
-        color_index = entry[0]
-        size = entry[1]
-        if size >= threshold:
-            CCV[color_index][0] += size
-        else:
-            CCV[color_index][1] += size
-    CCV = tuple(tuple(entry) for entry in CCV)
+             j in range(blob.shape[1]) for table in [[[0, 0] for _ in range(0, n_blobs)]]]
+    CCV = [[0, 0] for _ in range(24)]
+    for color_index, size in ((entry[0], entry[1]) for entry in table):
+        CCV[color_index][size >= threshold] += size
+    CCV = tuple(map(tuple, CCV))
     return CCV
 
 
 def blob_extract(mac: ndarray) -> tuple:
     """Extracts blobs from a MAC image"""
-    blob = zeros([mac.shape[0], mac.shape[1]]).astype('uint32').tolist()
-    n_blobs = 0
-    for index in range(0, 24):
-        count, labels = connectedComponents(where(mac == index, 1, 0).astype('uint8'))
-        labels[labels > 0] += n_blobs
-        blob += labels
-        if count > 1:
-            n_blobs += (count - 1)
+    blob = label(mac, connectivity=1) + 1
+    n_blobs = max(blob)
+    if n_blobs > 1:
+        count = bincount(blob.ravel())[2:]
+        n_blobs -= 1
+        n_blobs += count_nonzero(count > 1)
     return n_blobs, blob
 
 
@@ -119,16 +116,12 @@ def find_minimum_macbeth(p_entry: tuple, func: callable) -> int:
                  ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
                  ('neutral 5', (122, 122, 121)),
                  ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
-    p = p_entry
-    minIndex, _ = min(enumerate([func(p, tuple(q[1])) for q in q_entries]), key=lambda x: x[1])
-    return minIndex
+    return (min(enumerate([func(p_entry, tuple(q[1])) for q in q_entries]), key=lambda x: x[1]))[0]
 
 
-def find_minimum(p_entry: tuple, func: callable, q_entries=None) -> int:
+def find_minimum(p_entry: tuple, func: callable, q_entries: tuple) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
-    p = p_entry[1]
-    minIndex, val = min(enumerate(q_entries), key=lambda x: func(p, x[1][1]))
-    return minIndex
+    return (min(enumerate(q_entries), key=lambda x: func(p_entry[1], x[1][1])))[0]
 
 
 @cache
@@ -162,9 +155,12 @@ def lab_distance_3d(A: tuple, B: tuple) -> float:
 @cache
 def get_image_from_url(url: str) -> ndarray:
     """Gets an image from a URL and converts it to BGR"""
-    image = request.urlopen(url).read()
-    image = imdecode(asarray(bytearray(image), dtype='uint8'), -1)
-    return resize(cvtColor(image, COLOR_RGB2BGR), (24, 24))
+    response = get(url)
+    img = Image.open(BytesIO(response.content))
+    img = array(img)
+    img = cvtColor(img, COLOR_RGB2BGR)
+    img = resize(img, (16, 16))
+    return img
 
 
 def reSort(loop, func, total):
@@ -173,7 +169,8 @@ def reSort(loop, func, total):
     distance_matrix = zeros((loop_length, loop_length))
     for i in range(loop_length):
         for j in range(i):
-            distance_matrix[i][j] = distance_matrix[j][i] = func(n_loop[i][1], n_loop[j][1])
+            dist = func(n_loop[i][1], n_loop[j][1])
+            distance_matrix[i][j] = distance_matrix[j][i] = dist
     max_pass_count = 150
     pass_count = 0
     while pass_count < max_pass_count:
@@ -182,31 +179,30 @@ def reSort(loop, func, total):
         minIndex = -1
         val = -1
         for i in range(loop_length - 1):
-            if i == 0 or i == loop_length - 1:
-                behind_index = n_loop[loop_length - 2][0]
+            if i == 0 or i == loop_length - 2:
+                behind_index = n_loop[loop_length - 3][0]
                 ahead_index = n_loop[0][0]
-                avg_of_distances = mean(
-                    [distance_matrix[behind_index, moving_index], distance_matrix[ahead_index, moving_index]])
             else:
                 behind_index = n_loop[i - 1][0]
-                ahead_index = n_loop[i][0]
-                avg_of_distances = mean(
-                    [distance_matrix[behind_index, moving_index], distance_matrix[ahead_index, moving_index]])
-            n_loop_test = n_loop[:i] + [moving_loop_entry] + n_loop[i:]
-            N = len(n_loop_test)
-            total_distance = sum([distance_matrix[n_loop_test[k - 1][0], n_loop_test[k][0]] for k in range(N)])
+                ahead_index = n_loop[i + 1][0]
+            distance_behind = distance_matrix[behind_index, moving_index]
+            distance_ahead = distance_matrix[ahead_index, moving_index]
+            avg_of_distances_i = (distance_behind + distance_ahead) / 2
             if total:
-                if minIndex == -1 or total_distance < val:
-                    val = total_distance
+                total_distance_i = sum([distance_matrix[n_loop[k - 1][0], n_loop[k][0]] for k in range(loop_length - 1)]
+                                       )
+                total_distance_i += distance_matrix[n_loop[0][0], n_loop[-1][0]]
+                if minIndex == -1 or total_distance_i < val:
+                    val = total_distance_i
                     minIndex = i
             else:
-                if minIndex == -1 or avg_of_distances < val:
-                    val = avg_of_distances
+                if minIndex == -1 or avg_of_distances_i < val:
+                    val = avg_of_distances_i
                     minIndex = i
-        if minIndex == loop_length - 1:
-            n_loop.append(moving_loop_entry)
+        if minIndex == loop_length - 2:
+            n_loop.insert(0, moving_loop_entry)
         else:
-            n_loop.insert(minIndex, moving_loop_entry)
+            n_loop.insert(minIndex + 1, moving_loop_entry)
         pass_count += 1
     new_loop = [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
     return new_loop
@@ -236,18 +232,20 @@ class App:
 
     def loop_sort(self, entries: tuple, func: callable) -> list:
         """Sorts a list of entries by the function func"""
-        entries = list(entries)
-        loop = []
+        loop = deque()
+        loop.append(entries[0])
+        entries = deque(entries[1:])
         length = len(entries)
-        for i in range(length):
-            if i == 0:
-                loop.append(entries.pop(0))
-            else:
-                a1 = loop[i - 1]
-                b1 = tuple(entries)
-                loop.append(entries.pop(find_minimum(a1, func, b1)))
-            self.updateProgressBar(60 + (i / length) * 20)
-        return loop
+        updateProgressBar = self.updateProgressBar
+        for i in range(1, length + 1):
+            a1 = loop[-1]
+            b1 = entries
+            j = find_minimum(a1, func, b1)
+            loop.append(b1[j])
+            b1.rotate(-j)
+            b1.popleft()
+            updateProgressBar(60 + (i / length) * 20)
+        return list(loop)
 
     def ccv_sort(self, playlistID: str) -> list:
         """Sorts a playlist using CCVs"""
@@ -259,27 +257,20 @@ class App:
         return [loop[i][0] for i in range(0, len(loop))]
 
     def make_ccv_collection(self, playlistItems: tuple, data: callable) -> list:
-        """Returns a list of tuples containing the track IDs and the """
         total = len(playlistItems)
         tupleCollection = []
         resultQueue = Queue()
 
         def process_item(toProcess: dict) -> None:
-            """Processes an item in the playlistItems list"""
             track = toProcess['track']
             trackID = track['id']
             url = track['album']['images'][-1]['url']
             resultQueue.put((trackID, data(url)))
 
-        threads = []
-        for ix, item in enumerate(playlistItems):
-            self.updateProgressBar(20 + (ix / total) * 40)
-            t = Thread(target=process_item, args=(item,))
-            threads.append(t)
-            t.start()
-
-        for t in threads:
-            t.join()
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for ix, item in enumerate(playlistItems):
+                self.updateProgressBar(20 + (ix / total) * 40)
+                executor.submit(process_item, item)
 
         while not resultQueue.empty():
             tupleCollection.append(resultQueue.get())
