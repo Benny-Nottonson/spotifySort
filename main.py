@@ -11,7 +11,7 @@ from PIL import Image
 from requests import get
 from skimage.measure import label
 from spotipy import Spotify, SpotifyOAuth
-from cv2 import cvtColor, resize, COLOR_RGB2BGR
+from cv2 import cvtColor, resize, COLOR_RGB2BGR # pylint: disable=no-member
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
@@ -171,10 +171,9 @@ def get_image_from_url(url: str) -> ndarray:
     return img
 
 
-def resort_loop(loop, func, total):
+def resort_loop(loop, func, total, loop_length):
     """Reorders a loop to minimize the distance between the colors"""
     n_loop = [(i,) + tpl[1:] for i, tpl in enumerate(loop)]
-    loop_length = len(n_loop)
     distance_matrix = zeros((loop_length, loop_length))
     for i in range(loop_length):
         for j in range(i):
@@ -263,7 +262,7 @@ class App:
         self.update_progress_bar(60)
         loop = self.loop_sort(entries, ccv_distance)
         self.update_progress_bar(80)
-        loop = resort_loop(loop, ccv_distance, True)
+        loop = resort_loop(loop, ccv_distance, True, len(loop))
         return [loop[i][0] for i in range(0, len(loop))]
 
     def make_ccv_collection(self, playlist_items: tuple, data: callable) -> list:
