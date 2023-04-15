@@ -11,7 +11,7 @@ from PIL import Image
 from requests import get
 from skimage.measure import label
 from spotipy import Spotify, SpotifyOAuth
-from cv2 import cv2
+from cv2 import cvtColor, resize, COLOR_RGB2BGR
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
@@ -166,8 +166,8 @@ def get_image_from_url(url: str) -> ndarray:
     response = get(url, timeout=5)
     img = Image.open(BytesIO(response.content))
     img = array(img)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    img = cv2.resize(img, (16, 16))
+    img = cvtColor(img, COLOR_RGB2BGR)
+    img = resize(img, (16, 16))
     return img
 
 
@@ -178,12 +178,10 @@ def resort_loop(loop, func, total):
     distance_matrix = zeros((loop_length, loop_length))
     for i in range(loop_length):
         for j in range(i):
-            dist = func(n_loop[i][1], n_loop[j][1])
-            distance_matrix[i][j] = distance_matrix[j][i] = dist
+            distance_matrix[i][j] = distance_matrix[j][i] = func(n_loop[i][1], n_loop[j][1])
     pass_count = 0
     while pass_count < 150:  # max number of passes
         moving_loop_entry = n_loop.pop(-1)
-        moving_index = moving_loop_entry[0]
         min_index = -1
         val = -1
         for i in range(loop_length - 1):
@@ -193,8 +191,8 @@ def resort_loop(loop, func, total):
             else:
                 behind_index = n_loop[i - 1][0]
                 ahead_index = n_loop[i + 1][0]
-            avg_of_distances_i = (distance_matrix[behind_index, moving_index] + distance_matrix[
-                ahead_index, moving_index]) / 2
+            avg_of_distances_i = (distance_matrix[behind_index, moving_loop_entry[0]] +
+                                  distance_matrix[ahead_index, moving_loop_entry[0]]) / 2
             if total:
                 total_distance_i = numpy_sum(
                     [distance_matrix[n_loop[k - 1][0], n_loop[k][0]] for k in
