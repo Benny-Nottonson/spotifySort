@@ -204,8 +204,9 @@ def resort_loop(loop, func, total, loop_length):
             avg_of_distances_i = (distance_matrix[behind_index, moving_loop_entry[0]] +
                                   distance_matrix[ahead_index, moving_loop_entry[0]]) / 2
             if total:
-                total_distance_i = numpy_sum(distance_matrix[n_loop[k - 1][0], n_loop[k][0]]
-                                             for k in range(loop_length - 1))
+                total_distance_i = numpy_sum(fromiter(
+                    (distance_matrix[n_loop[k - 1][0], n_loop[k][0]]
+                     for k in range(loop_length - 1)), dtype=float))
                 total_distance_i += distance_matrix[n_loop[0][0], n_loop[-1][0]]
                 if min_index == -1 or total_distance_i < val:
                     val = total_distance_i
