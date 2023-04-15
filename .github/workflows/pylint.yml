@@ -21,4 +21,4 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint --extension-pkg-whitelist=[cv2] --extension-pkg-allow-list=[cv2] $(git ls-files '*.py')
+        pylint --generated-member=cv2.cvtColor,cv2.resize,cv2.COLOR_RGB2BGR $(git ls-files '*.py')
