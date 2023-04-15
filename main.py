@@ -11,7 +11,7 @@ from PIL import Image
 from requests import get
 from skimage.measure import label
 from spotipy import Spotify, SpotifyOAuth
-from cv2 import cv2
+from cv2 import cvtColor, COLOR_RGB2BGR, resize
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
