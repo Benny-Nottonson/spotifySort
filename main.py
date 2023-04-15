@@ -166,8 +166,8 @@ def get_image_from_url(url: str) -> ndarray:
     response = get(url, timeout=5)
     img = Image.open(BytesIO(response.content))
     img = array(img)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    img = cv2.resize(img, (16, 16))
+    img = cvtColor(img, COLOR_RGB2BGR)
+    img = resize(img, (16, 16))
     return img
 
 
