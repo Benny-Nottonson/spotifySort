@@ -176,15 +176,21 @@ def get_n_loop(loop: list) -> list:
     return [(i,) + tpl[1:] for i, tpl in enumerate(loop)]
 
 
-def resort_loop(loop, func, total, loop_length):
-    """Reorders a loop to minimize the distance between the colors"""
-    n_loop = get_n_loop(loop)
+def generate_distance_matrix(n_loop: list, func: callable, loop_length:int) -> ndarray:
+    """Generates a distance matrix for a loop"""
     distance_matrix = zeros((loop_length, loop_length))
     for i in range(loop_length):
         for j in range(i):
             distance_matrix[i][j] = distance_matrix[j][i] = func(n_loop[i][1], n_loop[j][1])
+    return distance_matrix
+
+
+def resort_loop(loop, func, total, loop_length):
+    """Reorders a loop to minimize the distance between the colors"""
+    n_loop = get_n_loop(loop)
+    distance_matrix = generate_distance_matrix(n_loop, func, loop_length)
     pass_count = 0
-    while pass_count < 150:  # max number of passes
+    while pass_count < 150:
         moving_loop_entry = n_loop.pop(-1)
         min_index = -1
         val = -1
