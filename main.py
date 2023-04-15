@@ -6,7 +6,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
 from numpy import sum as numpy_sum, ndarray, array, zeros, matmul, max as numpy_max, bincount, \
-    count_nonzero
+    count_nonzero, fromiter
 from PIL import Image
 from requests import get
 from skimage.measure import label
