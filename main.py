@@ -171,18 +171,23 @@ def get_image_from_url(url: str) -> ndarray:
     return img
 
 
+def get_n_loop(loop: list) -> list:
+    """Converts a loop to a list of tuples with the index and the color"""
+    return [(i,) + tpl[1:] for i, tpl in enumerate(loop)]
+
+
 def resort_loop(loop, func, total, loop_length):
     """Reorders a loop to minimize the distance between the colors"""
-    n_loop = [(i,) + tpl[1:] for i, tpl in enumerate(loop)]
+    n_loop = get_n_loop(loop)
     distance_matrix = zeros((loop_length, loop_length))
     for i in range(loop_length):
         for j in range(i):
-            distance_matrix[i, j] = distance_matrix[j, i] = func(n_loop[i][1], n_loop[j][1])
+            distance_matrix[i][j] = distance_matrix[j][i] = func(n_loop[i][1], n_loop[j][1])
     pass_count = 0
-    min_index = -1
-    val = -1
-    while pass_count < 150:
+    while pass_count < 150:  # max number of passes
         moving_loop_entry = n_loop.pop(-1)
+        min_index = -1
+        val = -1
         for i in range(loop_length - 1):
             if i in (0, loop_length - 2):
                 behind_index = n_loop[loop_length - 3][0]
@@ -190,15 +195,11 @@ def resort_loop(loop, func, total, loop_length):
             else:
                 behind_index = n_loop[i - 1][0]
                 ahead_index = n_loop[i + 1][0]
-
             avg_of_distances_i = (distance_matrix[behind_index, moving_loop_entry[0]] +
                                   distance_matrix[ahead_index, moving_loop_entry[0]]) / 2
-
             if total:
-                total_distance_i = sum(
-                    [distance_matrix[n_loop[k - 1][0], n_loop[k][0]] 
-                     for k in range(loop_length - 1)]
-                )
+                total_distance_i = numpy_sum(distance_matrix[n_loop[k - 1][0], n_loop[k][0]]
+                                             for k in range(loop_length - 1))
                 total_distance_i += distance_matrix[n_loop[0][0], n_loop[-1][0]]
                 if min_index == -1 or total_distance_i < val:
                     val = total_distance_i
@@ -212,8 +213,6 @@ def resort_loop(loop, func, total, loop_length):
         else:
             n_loop.insert(min_index + 1, moving_loop_entry)
         pass_count += 1
-        min_index = -1
-        val = -1
     return [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
 
 
