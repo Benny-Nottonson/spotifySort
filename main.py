@@ -10,17 +10,17 @@ from numpy import sum as numpy_sum, ndarray, array, zeros, matmul, max as numpy_
 from PIL import Image
 from requests import get
 from skimage.measure import label
-from spotipy import Spotify, SpotifyOAuth
-from cv2 import cvtColor, resize, COLOR_RGB2BGR # pylint: disable=no-member
+from SpotifyAPI import SpotifyAPI, SpotifyAPIManager
+from cv2 import cvtColor, resize, COLOR_RGB2BGR
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
 SCOPE = "user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private " \
         "user-library-read"
-sp = Spotify(auth_manager=SpotifyOAuth(client_id="",
-                                       client_secret="",
-                                       redirect_uri="https://example.com",
-                                       scope=SCOPE))
+sp = SpotifyAPI(api_manager=SpotifyAPIManager(client_id="",
+                                              client_secret="",
+                                              redirect_uri="https://example.com",
+                                              scope=SCOPE))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
 
@@ -176,7 +176,7 @@ def get_n_loop(loop: list) -> list:
     return [(i,) + tpl[1:] for i, tpl in enumerate(loop)]
 
 
-def generate_distance_matrix(n_loop: list, func: callable, loop_length:int) -> ndarray:
+def generate_distance_matrix(n_loop: list, func: callable, loop_length: int) -> ndarray:
     """Generates a distance matrix for a loop"""
     distance_matrix = zeros((loop_length, loop_length))
     for i in range(loop_length):
@@ -221,6 +221,17 @@ def resort_loop(loop, func, total, loop_length):
             n_loop.insert(min_index + 1, moving_loop_entry)
         pass_count += 1
     return [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
+
+
+def remove_duplicates(items: list) -> list:
+    """Removes duplicate items from a return API call"""
+    seen = set()
+    final_items = []
+    for item in items:
+        if item['track']['id'] not in seen:
+            seen.add(item['track']['id'])
+            final_items.append(item)
+    return tuple(final_items)
 
 
 class App:
@@ -268,7 +279,9 @@ class App:
 
     def ccv_sort(self, playlist_id: str) -> list:
         """Sorts a playlist using CCVs"""
-        entries = self.make_ccv_collection(get_playlist_items(playlist_id), ccv)
+        items = get_playlist_items(playlist_id)
+        items = remove_duplicates(items)
+        entries = self.make_ccv_collection(items, ccv)
         self.update_progress_bar(60)
         loop = self.loop_sort(entries, ccv_distance)
         self.update_progress_bar(80)
