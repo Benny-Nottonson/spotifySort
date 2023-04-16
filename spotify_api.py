@@ -11,8 +11,9 @@ from requests import post, get, delete
 
 class SpotifyAPIManager:
     """This class is used to authenticate and manage the Spotify API"""
+
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, client_id, client_secret, redirect_uri, scope):
+    def __init__(self, client_id: str, client_secret: str, redirect_uri: str, scope: str) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
@@ -45,7 +46,7 @@ class SpotifyAPIManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.save_token_to_cache()
 
-    def save_to_cache(self):
+    def save_to_cache(self) -> None:
         """Saves the token and code to a cache file"""
         cache = {
             "access_token": self.token,
@@ -55,14 +56,14 @@ class SpotifyAPIManager:
         with open(self.cache_path, "w", encoding='utf-8') as file:
             dump(cache, file)
 
-    def save_token_to_cache(self):
+    def save_token_to_cache(self) -> None:
         """Saves the token to a cache file"""
         cache = {"access_token": self.token, "expires_at": self.token_expires.timestamp(),
                  "authorization_code": self.code}
         with open(self.cache_path, "w", encoding='utf-8') as file:
             dump(cache, file)
 
-    def get_authorize_url(self):
+    def get_authorize_url(self) -> str:
         """Returns the url to authorize the app"""
         params = {
             'client_id': self.client_id,
@@ -73,7 +74,7 @@ class SpotifyAPIManager:
         url = 'https://accounts.spotify.com/authorize?' + urlencode(params)
         return url
 
-    def get_authorization_code(self):
+    def get_authorization_code(self) -> str:
         """Returns the authorization code from the url"""
         url = 'https://accounts.spotify.com/authorize'
         url += '?response_type=code'
@@ -85,7 +86,7 @@ class SpotifyAPIManager:
         code = code.split('=')[1]
         return code
 
-    def get_access_token(self):
+    def get_access_token(self) -> str:
         """Returns the access token"""
         if self.token and datetime.now() < self.token_expires:
             return self.token
@@ -105,7 +106,7 @@ class SpotifyAPIManager:
             return self.token
         raise ValueError("Authentication failed")
 
-    def refresh_access_token(self, refresh_token):
+    def refresh_access_token(self, refresh_token) -> str:
         """Refreshes the access token"""
         headers = {
             'Authorization': f'Basic {self.get_auth_header()}'
@@ -122,12 +123,12 @@ class SpotifyAPIManager:
             return self.token
         raise ValueError("Token refresh failed")
 
-    def get_auth_header(self):
+    def get_auth_header(self) -> str:
         """Returns the authorization header"""
         auth_header = b64encode(f"{self.client_id}:{self.client_secret}".encode())
         return auth_header.decode()
 
-    def get_access_token_header(self):
+    def get_access_token_header(self) -> dict:
         """Returns the access token header"""
         access_token = self.get_access_token()
         access_token_header = {
@@ -135,7 +136,7 @@ class SpotifyAPIManager:
         }
         return access_token_header
 
-    def get_resource(self, endpoint, params=None, fields=None):
+    def get_resource(self, endpoint: str, params: list = None, fields: list = None) -> dict:
         """Returns the resource from the endpoint"""
         url = self.api_url + endpoint
         headers = self.get_access_token_header()
@@ -151,20 +152,21 @@ class SpotifyAPIManager:
 
 class SpotifyAPI:
     """This class is used to interact with the Spotify API"""
-    def __init__(self, api_manager):
+
+    def __init__(self, api_manager: SpotifyAPIManager) -> None:
         self.api_manager = api_manager
 
-    def current_user(self):
+    def current_user(self) -> dict:
         """Returns the current user"""
         endpoint = "me"
         return self.api_manager.get_resource(endpoint)
 
-    def current_user_playlists(self):
+    def current_user_playlists(self) -> dict:
         """Returns the current user's playlists"""
         endpoint = "me/playlists"
         return self.api_manager.get_resource(endpoint)
 
-    def playlist(self, playlist_id, fields=None):
+    def playlist(self, playlist_id: str, fields: list = None) -> dict:
         """Returns the playlist with the given id"""
         endpoint = f"playlists/{playlist_id}"
         params = {}
@@ -172,7 +174,7 @@ class SpotifyAPI:
             params['fields'] = fields
         return self.api_manager.get_resource(endpoint, params=params)
 
-    def playlist_items(self, playlist_id, offset=None, fields=None):
+    def playlist_items(self, playlist_id: str, offset: int = None, fields: list = None) -> dict:
         """Returns the items of the playlist with the given id"""
         endpoint = f"playlists/{playlist_id}/tracks"
         params = {}
@@ -182,7 +184,7 @@ class SpotifyAPI:
             params['fields'] = fields
         return self.api_manager.get_resource(endpoint, params=params)
 
-    def playlist_remove_all_occurrences_of_items(self, playlist_id, items):
+    def playlist_remove_all_occurrences_of_items(self, playlist_id: str, items: list) -> bool:
         """Removes all occurrences of the given items from the playlist"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
@@ -193,7 +195,7 @@ class SpotifyAPI:
         print(f"Error {response.status_code} occurred: {response.text}")
         raise ValueError("Request failed")
 
-    def playlist_add_items(self, playlist_id, track_ids, position=None):
+    def playlist_add_items(self, playlist_id:str, track_ids:list, position: int = None):
         """Adds the given items to the playlist in order"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
