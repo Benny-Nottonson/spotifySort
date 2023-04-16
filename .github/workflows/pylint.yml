@@ -21,4 +21,4 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint --disable=E0611, R0902 $(git ls-files '*.py')
+        pylint --disable=[E0611, R0902] $(git ls-files '*.py')
