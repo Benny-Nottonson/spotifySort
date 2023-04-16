@@ -1,6 +1,5 @@
 Pillow==9.5.0
 requests
-spotipy==2.23.0
 scikit-image
 opencv-python
 numpy
