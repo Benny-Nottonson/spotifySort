@@ -1,13 +1,16 @@
-from webbrowser import open
-from requests import post, get, delete
+"""This module contains the SpotifyAPIManager class which is used to authenticate and manage the
+Spotify API."""
+from webbrowser import open as open_browser
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 from json import load, dump
 from os import path, getcwd
 from base64 import b64encode
+from requests import post, get, delete
 
 
 class SpotifyAPIManager:
+    """This class is used to authenticate and manage the Spotify API"""
     def __init__(self, client_id, client_secret, redirect_uri, scope):
         self.client_id = client_id
         self.client_secret = client_secret
@@ -20,8 +23,8 @@ class SpotifyAPIManager:
         self.api_url = "https://api.spotify.com/v1/"
         self.cache_path = path.join(getcwd(), ".cache")
         if path.exists(self.cache_path):
-            with open(self.cache_path) as f:
-                cache = load(f)
+            with open(self.cache_path, encoding='utf-8') as file:
+                cache = load(file)
                 if cache["expires_at"] > datetime.now().timestamp():
                     self.token = cache["access_token"]
                     self.token_expires = datetime.fromtimestamp(cache["expires_at"])
@@ -35,22 +38,31 @@ class SpotifyAPIManager:
             self.token = self.get_access_token()
             self.save_to_cache()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.save_token_to_cache()
+
     def save_to_cache(self):
+        """Saves the token and code to a cache file"""
         cache = {
             "access_token": self.token,
             "expires_at": self.token_expires.timestamp(),
             "authorization_code": self.code,
         }
-        with open(self.cache_path, "w") as f:
-            dump(cache, f)
+        with open(self.cache_path, "w", encoding='utf-8') as file:
+            dump(cache, file)
 
     def save_token_to_cache(self):
+        """Saves the token to a cache file"""
         cache = {"access_token": self.token, "expires_at": self.token_expires.timestamp(),
                  "authorization_code": self.code}
-        with open(self.cache_path, "w") as f:
-            dump(cache, f)
+        with open(self.cache_path, "w", encoding='utf-8') as file:
+            dump(cache, file)
 
     def get_authorize_url(self):
+        """Returns the url to authorize the app"""
         params = {
             'client_id': self.client_id,
             'response_type': 'code',
@@ -61,38 +73,39 @@ class SpotifyAPIManager:
         return url
 
     def get_authorization_code(self):
+        """Returns the authorization code from the url"""
         url = 'https://accounts.spotify.com/authorize'
         url += '?response_type=code'
         url += f'&client_id={self.client_id}'
         url += f'&redirect_uri={self.redirect_uri}'
         url += f'&scope={self.scope}'
-        open(url)
+        open_browser(url)
         code = input("Enter the full url: ")
         code = code.split('=')[1]
         return code
 
     def get_access_token(self):
+        """Returns the access token"""
         if self.token and datetime.now() < self.token_expires:
             return self.token
-        else:
-            headers = {
-                'Authorization': f'Basic {self.get_auth_header()}'
-            }
-            data = {
-                'grant_type': 'authorization_code',
-                'code': self.code,
-                'redirect_uri': self.redirect_uri
-            }
-            response = post(self.token_url, headers=headers, data=data)
-            if response.status_code == 200:
-                self.token = response.json()['access_token']
-                expires_in = response.json()['expires_in']
-                self.token_expires = datetime.now() + timedelta(seconds=expires_in)
-                return self.token
-            else:
-                raise ValueError("Authentication failed")
+        headers = {
+            'Authorization': f'Basic {self.get_auth_header()}'
+        }
+        data = {
+            'grant_type': 'authorization_code',
+            'code': self.code,
+            'redirect_uri': self.redirect_uri
+        }
+        response = post(self.token_url, headers=headers, data=data, timeout=5)
+        if response.status_code == 200:
+            self.token = response.json()['access_token']
+            expires_in = response.json()['expires_in']
+            self.token_expires = datetime.now() + timedelta(seconds=expires_in)
+            return self.token
+        raise ValueError("Authentication failed")
 
     def refresh_access_token(self, refresh_token):
+        """Refreshes the access token"""
         headers = {
             'Authorization': f'Basic {self.get_auth_header()}'
         }
@@ -100,20 +113,21 @@ class SpotifyAPIManager:
             'grant_type': 'refresh_token',
             'refresh_token': refresh_token
         }
-        response = post(self.token_url, headers=headers, data=data)
+        response = post(self.token_url, headers=headers, data=data, timeout=5)
         if response.status_code == 200:
             self.token = response.json()['access_token']
             expires_in = response.json()['expires_in']
             self.token_expires = datetime.now() + timedelta(seconds=expires_in)
             return self.token
-        else:
-            raise ValueError("Token refresh failed")
+        raise ValueError("Token refresh failed")
 
     def get_auth_header(self):
+        """Returns the authorization header"""
         auth_header = b64encode(f"{self.client_id}:{self.client_secret}".encode())
         return auth_header.decode()
 
     def get_access_token_header(self):
+        """Returns the access token header"""
         access_token = self.get_access_token()
         access_token_header = {
             'Authorization': f'Bearer {access_token}'
@@ -121,33 +135,36 @@ class SpotifyAPIManager:
         return access_token_header
 
     def get_resource(self, endpoint, params=None, fields=None):
+        """Returns the resource from the endpoint"""
         url = self.api_url + endpoint
         headers = self.get_access_token_header()
         if fields is not None:
             headers['Accept'] = 'application/json'
-        response = get(url, headers=headers, params=params, data=None)
+        response = get(url, headers=headers, params=params, data=None, timeout=5)
         if response.status_code == 200:
             if fields is not None:
                 return response.json()[fields]
-            else:
-                return response.json()
-        else:
-            raise ValueError("Request failed")
+            return response.json()
+        raise ValueError("Request failed")
 
 
 class SpotifyAPI:
+    """This class is used to interact with the Spotify API"""
     def __init__(self, api_manager):
         self.api_manager = api_manager
 
     def current_user(self):
+        """Returns the current user"""
         endpoint = "me"
         return self.api_manager.get_resource(endpoint)
 
     def current_user_playlists(self):
+        """Returns the current user's playlists"""
         endpoint = "me/playlists"
         return self.api_manager.get_resource(endpoint)
 
     def playlist(self, playlist_id, fields=None):
+        """Returns the playlist with the given id"""
         endpoint = f"playlists/{playlist_id}"
         params = {}
         if fields is not None:
@@ -155,6 +172,7 @@ class SpotifyAPI:
         return self.api_manager.get_resource(endpoint, params=params)
 
     def playlist_items(self, playlist_id, offset=None, fields=None):
+        """Returns the items of the playlist with the given id"""
         endpoint = f"playlists/{playlist_id}/tracks"
         params = {}
         if offset is not None:
@@ -164,23 +182,24 @@ class SpotifyAPI:
         return self.api_manager.get_resource(endpoint, params=params)
 
     def playlist_remove_all_occurrences_of_items(self, playlist_id, items):
+        """Removes all occurrences of the given items from the playlist"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
         data = {"uris": [f"spotify:track:{tid}" for tid in items]}
-        response = delete(endpoint, headers=headers, json=data)
+        response = delete(endpoint, headers=headers, json=data, timeout=5)
         if response.status_code == 200:
             return True
-        else:
-            print(f"Error {response.status_code} occurred: {response.text}")
-            raise ValueError("Request failed")
+        print(f"Error {response.status_code} occurred: {response.text}")
+        raise ValueError("Request failed")
 
     def playlist_add_items(self, playlist_id, track_ids, position=None):
+        """Adds the given items to the playlist in order"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
         data = {"uris": [f"spotify:track:{tid}" for tid in track_ids]}
         if position is not None:
             data["position"] = position
-        response = post(endpoint, headers=headers, json=data)
+        response = post(endpoint, headers=headers, json=data, timeout=5)
         if response.status_code != 201:
             print(f"Error {response.status_code} occurred: {response.text}")
             raise ValueError("Request failed")

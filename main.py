@@ -10,7 +10,7 @@ from numpy import sum as numpy_sum, ndarray, array, zeros, matmul, max as numpy_
 from PIL import Image
 from requests import get
 from skimage.measure import label
-from SpotifyAPI import SpotifyAPI, SpotifyAPIManager
+from spotify_api import SpotifyAPI, SpotifyAPIManager
 from cv2 import cvtColor, resize, COLOR_RGB2BGR
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
