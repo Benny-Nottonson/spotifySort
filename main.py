@@ -8,10 +8,9 @@ from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
 from numpy import sum as numpy_sum, ndarray, array, zeros, matmul, max as numpy_max, bincount, \
     count_nonzero, fromiter
 from PIL import Image
-from requests import get
 from skimage.measure import label
 from cv2 import cvtColor, resize, COLOR_RGB2BGR
-from spotify_api import SpotifyAPI, SpotifyAPIManager
+from spotify_api import SpotifyAPI, SpotifyAPIManager, get
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
