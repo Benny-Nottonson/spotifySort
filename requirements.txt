@@ -1,5 +1,5 @@
-Pillow==9.5.0
-requests
+numpy
+Pillow
 scikit-image
 opencv-python
-numpy
+requests
