@@ -195,7 +195,7 @@ class SpotifyAPI:
         print(f"Error {response.status_code} occurred: {response.text}")
         raise ValueError("Request failed")
 
-    def playlist_add_items(self, playlist_id:str, track_ids:list, position: int = None):
+    def playlist_add_items(self, playlist_id:  str, track_ids: list, position: int = None):
         """Adds the given items to the playlist in order"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
