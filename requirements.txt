@@ -3,3 +3,4 @@ Pillow
 scikit-image
 opencv-python
 requests
+customtkinter

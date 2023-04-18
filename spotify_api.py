@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from json import load, dump
 from os import path, getcwd
 from base64 import b64encode
-from requests import post, get, delete
+from requests import post, get as requests_get, delete
 
 
 class SpotifyAPIManager:
@@ -142,7 +142,7 @@ class SpotifyAPIManager:
         headers = self.get_access_token_header()
         if fields is not None:
             headers['Accept'] = 'application/json'
-        response = get(url, headers=headers, params=params, data=None, timeout=5)
+        response = requests_get(url, headers=headers, params=params, data=None, timeout=5)
         if response.status_code == 200:
             if fields is not None:
                 return response.json()[fields]
@@ -174,8 +174,9 @@ class SpotifyAPI:
             params['fields'] = fields
         return self.api_manager.get_resource(endpoint, params=params)
 
-    def playlist_items(self, playlist_id: str, offset: int = None, fields: list = None) -> dict:
-        """Returns the items of the playlist with the given id"""
+    def playlist_items_batch(self, playlist_id: str, offset: int = None, fields: list = None) \
+            -> dict:
+        """Returns the items of the playlist with the given id, offset by some amount"""
         endpoint = f"playlists/{playlist_id}/tracks"
         params = {}
         if offset is not None:
@@ -184,7 +185,24 @@ class SpotifyAPI:
             params['fields'] = fields
         return self.api_manager.get_resource(endpoint, params=params)
 
-    def playlist_remove_all_occurrences_of_items(self, playlist_id: str, items: list) -> bool:
+    def playlist_items(self, playlist_id: str, fields: list = None, playlist_length: int = None) \
+            -> dict:
+        """Returns the items of the playlist with the given id"""
+        if playlist_length is None:
+            playlist_length = self.playlist(playlist_id, fields=['tracks.total'])['tracks']['total']
+        items = []
+        for offset in range(0, playlist_length, 100):
+            items.extend(self.playlist_items_batch(playlist_id, offset, fields)['items'])
+        return items
+
+    def playlist_remove_all_occurrences_of_items(self, playlist_id: str, items) -> bool:
+        """Removes all occurrences of the given items from the playlist"""
+        for i in range(0, len(items), 100):
+            if not self.playlist_remove_all_occurrences_of_items_batch(playlist_id, items[i:i+100]):
+                return False
+        return True
+
+    def playlist_remove_all_occurrences_of_items_batch(self, playlist_id: str, items: list) -> bool:
         """Removes all occurrences of the given items from the playlist"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
@@ -195,7 +213,14 @@ class SpotifyAPI:
         print(f"Error {response.status_code} occurred: {response.text}")
         raise ValueError("Request failed")
 
-    def playlist_add_items(self, playlist_id:  str, track_ids: list, position: int = None):
+    def playlist_add_items(self, playlist_id: str, track_ids: list, position: int = None):
+        """Adds the given items to the playlist in order"""
+        for i in range(0, len(track_ids), 100):
+            if not self.playlist_add_items_batch(playlist_id, track_ids[i:i+100], position):
+                return False
+        return True
+
+    def playlist_add_items_batch(self, playlist_id: str, track_ids: list, position: int = None):
         """Adds the given items to the playlist in order"""
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}

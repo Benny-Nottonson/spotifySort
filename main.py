@@ -2,15 +2,16 @@
 from io import BytesIO
 from queue import Queue
 from functools import cache
+from threading import Thread
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from tkinter import Tk, StringVar, OptionMenu, Button, HORIZONTAL, ttk
 from numpy import sum as numpy_sum, ndarray, array, zeros, matmul, max as numpy_max, bincount, \
     count_nonzero, fromiter
 from PIL import Image
 from skimage.measure import label
 from cv2 import cvtColor, resize, COLOR_RGB2BGR
-from spotify_api import SpotifyAPI, SpotifyAPIManager, get
+from customtkinter import CTkImage, CTk, CTkFrame, CTkLabel, CTkButton, CTkComboBox, CTkProgressBar
+from spotify_api import SpotifyAPI, SpotifyAPIManager, requests_get
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
@@ -32,39 +33,24 @@ def get_playlist_id(playlist_name: str) -> str:
 def get_playlist_items(playlist_id: str) -> tuple:
     """Returns a list of the items in a playlist"""
     playlist_length = sp.playlist(playlist_id, fields='name,tracks.total')['tracks']['total']
-    offset = 0
-    playlist_items = []
-    while offset < playlist_length:
-        batch = sp.playlist_items(playlist_id, offset=offset,
-                                  fields='items(track(id,track_number,album(images)))')
-        batch_items = batch['items']
-        offset += len(batch_items)
-        playlist_items.extend(batch_items)
+    playlist_items = sp.playlist_items(playlist_id,
+                                       fields='items(track(id,track_number,album(images)))',
+                                       playlist_length=playlist_length)
     return tuple(playlist_items)
+
+
+def get_playlist_art(playlist_id: str) -> CTkImage:
+    """Returns the playlist preview image"""
+    playlist_art = sp.playlist(playlist_id, fields='images')['images'][0]['url']
+    playlist_art = Image.open(BytesIO(requests_get(playlist_art, timeout=5).content))
+    playlist_art = CTkImage(playlist_art, size=(250, 250))
+    return playlist_art
 
 
 def reorder_playlist(playlist_id: str, sorted_track_ids: list) -> None:
     """Reorders a playlist to match the order of the sorted track IDs"""
-    offset = 0
-    length = len(sorted_track_ids)
-    if length > 100:
-        while True:
-            sp.playlist_remove_all_occurrences_of_items(playlist_id,
-                                                        sorted_track_ids[offset:offset + 100])
-            offset += 100
-            if offset >= length:
-                break
-    else:
-        sp.playlist_remove_all_occurrences_of_items(playlist_id=playlist_id, items=sorted_track_ids)
-    offset = 0
-    if length > 100:
-        while True:
-            sp.playlist_add_items(playlist_id, sorted_track_ids[offset:offset + 100], offset)
-            offset += 100
-            if offset >= length:
-                break
-    else:
-        sp.playlist_add_items(playlist_id, sorted_track_ids, offset)
+    sp.playlist_remove_all_occurrences_of_items(playlist_id, sorted_track_ids)
+    sp.playlist_add_items(playlist_id, sorted_track_ids)
 
 
 def ccv(img_url: str) -> tuple:
@@ -96,28 +82,24 @@ def blob_extract(mac: ndarray) -> tuple:
 
 def rgb_to_mac(img: ndarray) -> list:
     """Converts an RGB image to a MAC image"""
-    return [
-        [int(find_minimum_macbeth(tuple(img[i][j]), lab_distance_3d)) for j in range(img.shape[1])]
-        for i in range(img.shape[0])]
+    return [[int(find_minimum_macbeth(tuple(img[i][j]), lab_distance_3d))
+             for j in range(img.shape[1])] for i in range(img.shape[0])]
 
 
 @cache
 def find_minimum_macbeth(p_entry: tuple, func: callable) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
     q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
-                 ('blue sky', (98, 122, 157)),
-                 ('foliage', (87, 108, 67)), ('blue flower', (133, 128, 177)),
-                 ('bluish green', (103, 189, 170)),
+                 ('blue sky', (98, 122, 157)), ('foliage', (87, 108, 67)),
+                 ('blue flower', (133, 128, 177)), ('bluish green', (103, 189, 170)),
                  ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
-                 ('moderate red', (193, 90, 99)),
-                 ('purple', (94, 60, 108)), ('yellow green', (157, 188, 64)),
-                 ('orange yellow', (224, 163, 46)),
-                 ('blue', (56, 61, 150)), ('green', (70, 148, 73)), ('red', (175, 54, 60)),
-                 ('yellow', (231, 199, 31)),
+                 ('moderate red', (193, 90, 99)), ('purple', (94, 60, 108)),
+                 ('yellow green', (157, 188, 64)), ('orange yellow', (224, 163, 46)),
+                 ('blue', (56, 61, 150)), ('green', (70, 148, 73)),
+                 ('red', (175, 54, 60)), ('yellow', (231, 199, 31)),
                  ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
-                 ('white 9.5', (243, 243, 242)),
-                 ('neutral 8', (200, 200, 200)), ('neutral 6.5', (160, 160, 160)),
-                 ('neutral 5', (122, 122, 121)),
+                 ('white 9.5', (243, 243, 242)), ('neutral 8', (200, 200, 200)),
+                 ('neutral 6.5', (160, 160, 160)), ('neutral 5', (122, 122, 121)),
                  ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
     return (min(enumerate([func(p_entry, tuple(q[1])) for q in q_entries]), key=lambda x: x[1]))[0]
 
@@ -162,7 +144,7 @@ def lab_distance_3d(lab_one: tuple, lab_two: tuple) -> float:
 @cache
 def get_image_from_url(url: str) -> ndarray:
     """Gets an image from a URL and converts it to BGR"""
-    response = get(url, timeout=5)
+    response = requests_get(url, timeout=5)
     img = Image.open(BytesIO(response.content))
     img = array(img)
     img = cvtColor(img, COLOR_RGB2BGR)
@@ -189,7 +171,7 @@ def resort_loop(loop, func, total, loop_length):
     n_loop = get_n_loop(loop)
     distance_matrix = generate_distance_matrix(n_loop, func, loop_length)
     pass_count = 0
-    while pass_count < 150:
+    while pass_count < 250:
         moving_loop_entry = n_loop.pop(-1)
         min_index = -1
         val = -1
@@ -233,92 +215,124 @@ def remove_duplicates(items: list) -> list:
     return tuple(final_items)
 
 
-class App:
+def loop_sort(entries: tuple, func: callable) -> list:
+    """Sorts a list of entries by the function func"""
+    loop = deque()
+    loop.append(entries[0])
+    entries = deque(entries[1:])
+    length = len(entries)
+    for _ in range(1, length + 1):
+        item_one = loop[-1]
+        item_two = entries
+        j = find_minimum(item_one, func, item_two)
+        loop.append(item_two[j])
+        item_two.rotate(-j)
+        item_two.popleft()
+    return list(loop)
+
+
+def ccv_sort(playlist_id: str) -> list:
+    """Sorts a playlist using CCVs"""
+    items = get_playlist_items(playlist_id)
+    items = remove_duplicates(items)
+    entries = make_ccv_collection(items, ccv)
+    loop = loop_sort(entries, ccv_distance)
+    loop = resort_loop(loop, ccv_distance, True, len(loop))
+    return [loop[i][0] for i in range(0, len(loop))]
+
+
+def make_ccv_collection(playlist_items: tuple, data: callable) -> list:
+    """Makes a collection of CCVs from a playlist"""""
+    tuple_collection = []
+    result_queue = Queue()
+
+    def process_item(to_process: dict) -> None:
+        """Processes an item in the playlist"""
+        track = to_process['track']
+        track_id = track['id']
+        url = track['album']['images'][-1]['url']
+        result_queue.put((track_id, data(url)))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for item in playlist_items:
+            executor.submit(process_item, item)
+
+    while not result_queue.empty():
+        tuple_collection.append(result_queue.get())
+
+    return tuple_collection
+
+
+def sort_playlist(playlist_id: str) -> None:
+    """Sorts a playlist by the given algorithm"""
+    sorted_track_ids = ccv_sort(playlist_id)
+    reorder_playlist(playlist_id, sorted_track_ids)
+    ccv_distance.cache_clear()
+    app.progress_bar.set(100, 100)
+
+
+class App(CTk):
     """The main application class"""
-
     def __init__(self):
-        self.window = Tk()
-        self.window.title("Spotify Playlist Sorter")
-        self.window.geometry('210x100')
-        self.playlist_names = [playList['name'] for playList in playlists['items']]
-        self.clicked = StringVar()
-        self.clicked.set(self.playlist_names[0])
-        drop = OptionMenu(self.window, self.clicked, *self.playlist_names)
-        drop.pack()
-        sort_button = Button(self.window, text="Sort",
-                             command=lambda: self.sort_playlist(
-                                 get_playlist_id(self.clicked.get())))
-        sort_button.pack()
-        self.progress = ttk.Progressbar(self.window, orient=HORIZONTAL, length=200,
-                                        mode='determinate')
-        self.progress.pack()
-        self.window.mainloop()
+        green = "#1DB954"
+        black = "#191414"
+        super().__init__()
+        self.title("Spotify Playlist Sorter")
+        self.geometry(f"{1100}x{580}")
+        self.resizable(False, False)
+        self.title_label = CTkLabel(self, text="Spotify Playlist Sorter")
+        self.title_label.pack(padx=10, pady=10)
+        self.center_frame = CTkFrame(self)
+        self.center_frame.pack(padx=10, pady=10)
+        self.album_art = CTkLabel(self.center_frame, text="")
+        self.album_art.configure(width=250, height=250)
+        self.album_art.pack()
+        self.dropdown = CTkComboBox(self, values=[playList['name'] for playList in
+                                                                playlists['items']],
+                                                  command=self.dropdown_changed)
+        self.dropdown.configure(state="readonly")
+        self.dropdown.pack(padx=10, pady=10)
+        self.button = CTkButton(self, text="Sort", command=self.sort_playlist,
+                                              fg_color=green, text_color=black)
+        self.button.pack(padx=10, pady=10)
+        self.progress_bar = CTkProgressBar(self, mode="indeterminate",
+                                                         progress_color=green, bg_color=black)
+        self.progress_bar.set(0, 100)
+        self.progress_bar.pack(padx=10, pady=10)
+        self.dropdown_changed(None)
 
-    def update_progress_bar(self, value):
-        """Updates the progress bar to the given value"""""
-        self.progress['value'] = value
-        self.window.update_idletasks()
+    def dropdown_changed(self, _):
+        """Called when the dropdown is changed"""
+        album_art_thread = Thread(target=self.get_album_art)
+        album_art_thread.start()
 
-    def loop_sort(self, entries: tuple, func: callable) -> list:
-        """Sorts a list of entries by the function func"""
-        loop = deque()
-        loop.append(entries[0])
-        entries = deque(entries[1:])
-        length = len(entries)
-        update_progress_bar = self.update_progress_bar
-        for i in range(1, length + 1):
-            item_one = loop[-1]
-            item_two = entries
-            j = find_minimum(item_one, func, item_two)
-            loop.append(item_two[j])
-            item_two.rotate(-j)
-            item_two.popleft()
-            update_progress_bar(60 + (i / length) * 20)
-        return list(loop)
+    def sort_playlist(self):
+        """Sorts a playlist"""
+        playlist_id = get_playlist_id(self.dropdown.get())
+        sorting_thread = Thread(target=sort_playlist, args=(playlist_id,))
+        sorting_thread.start()
+        self.button.configure(state="disabled")
+        self.progress_bar.start()
+        while sorting_thread.is_alive():
+            self.update()
+        self.button.configure(state="normal")
+        self.progress_bar.stop()
+        self.progress_bar.destroy()
+        self.progress_bar = CTkProgressBar(self, mode="indeterminate")
+        self.progress_bar.set(0, 100)
+        self.progress_bar.pack(padx=10, pady=10)
 
-    def ccv_sort(self, playlist_id: str) -> list:
-        """Sorts a playlist using CCVs"""
-        items = get_playlist_items(playlist_id)
-        items = remove_duplicates(items)
-        entries = self.make_ccv_collection(items, ccv)
-        self.update_progress_bar(60)
-        loop = self.loop_sort(entries, ccv_distance)
-        self.update_progress_bar(80)
-        loop = resort_loop(loop, ccv_distance, True, len(loop))
-        return [loop[i][0] for i in range(0, len(loop))]
-
-    def make_ccv_collection(self, playlist_items: tuple, data: callable) -> list:
-        """Makes a collection of CCVs from a playlist"""""
-        total = len(playlist_items)
-        tuple_collection = []
-        result_queue = Queue()
-
-        def process_item(to_process: dict) -> None:
-            """Processes an item in the playlist"""
-            track = to_process['track']
-            track_id = track['id']
-            url = track['album']['images'][-1]['url']
-            result_queue.put((track_id, data(url)))
-
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            for index, item in enumerate(playlist_items):
-                self.update_progress_bar(20 + (index / total) * 40)
-                executor.submit(process_item, item)
-
-        while not result_queue.empty():
-            tuple_collection.append(result_queue.get())
-
-        return tuple_collection
-
-    def sort_playlist(self, playlist_id: str) -> None:
-        """Sorts a playlist by the given algorithm"""
-        self.update_progress_bar(20)
-        sorted_track_ids = self.ccv_sort(playlist_id)
-        self.update_progress_bar(90)
-        reorder_playlist(playlist_id, sorted_track_ids)
-        self.update_progress_bar(0)
-        ccv_distance.cache_clear()
+    def get_album_art(self):
+        """Gets the album art for the selected playlist"""
+        playlist_id = get_playlist_id(self.dropdown.get())
+        art = get_playlist_art(playlist_id)
+        self.album_art.destroy()
+        self.album_art = CTkLabel(self.center_frame, text="")
+        self.album_art.configure(image=art)
+        self.album_art.image = art
+        self.album_art.pack(fill='both', expand='yes')
 
 
 if __name__ == '__main__':
     app = App()
+    app.mainloop()
