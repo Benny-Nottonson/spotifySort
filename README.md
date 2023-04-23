@@ -19,9 +19,9 @@ A project coded by Benny Nottonson using Python, implements LRU Caching and CCV 
 
 ## Features
 
-- Allows selection of album
+- Allows selection of playlist
 - Works for public and private playlists
-- Runtime generally <= 30s
+- Runtime generally <= 5s
 - Scalable for large playlists
 
 
