@@ -6,7 +6,41 @@ from urllib.parse import urlencode
 from json import load, dump
 from os import path, getcwd
 from base64 import b64encode
-from requests import post, get as requests_get, delete
+from requests import post, delete, Session
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
+
+
+class FastHTTPClient:
+    """This class is used to make requests faster by using a session and retrying on failure"""
+    def __init__(self, retries=3, backoff_factor=0.3, status_force_list=(500, 502, 504)):
+        self.session = Session()
+        retries = Retry(total=retries, backoff_factor=backoff_factor,
+                        status_forcelist=status_force_list)
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount('https://', adapter)
+        self.session.mount('https://', adapter)
+
+    def get(self, url, params=None, **kwargs):
+        """Calls a get request with a url and params"""
+        return self.session.get(url, params=params, **kwargs)
+
+    def post(self, url, data=None, json=None, **kwargs):
+        """Calls a post request with a url, data and json"""
+        return self.session.post(url, data=data, json=json, **kwargs)
+
+    def delete(self, url, **kwargs):
+        """Calls a delete request with a url"""
+        return self.session.delete(url, **kwargs)
+
+
+client = FastHTTPClient()
+
+
+def public_get(url, timeout=5):
+    """Calls a get request with a url and timeout"""
+    response = client.get(url, timeout=timeout)
+    return response
 
 
 class SpotifyAPIManager:
@@ -44,7 +78,7 @@ class SpotifyAPIManager:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.save_token_to_cache()
+        self.save_to_cache()
 
     def save_to_cache(self) -> None:
         """Saves the token and code to a cache file"""
@@ -53,13 +87,6 @@ class SpotifyAPIManager:
             "expires_at": self.token_expires.timestamp(),
             "authorization_code": self.code,
         }
-        with open(self.cache_path, "w", encoding='utf-8') as file:
-            dump(cache, file)
-
-    def save_token_to_cache(self) -> None:
-        """Saves the token to a cache file"""
-        cache = {"access_token": self.token, "expires_at": self.token_expires.timestamp(),
-                 "authorization_code": self.code}
         with open(self.cache_path, "w", encoding='utf-8') as file:
             dump(cache, file)
 
@@ -76,11 +103,14 @@ class SpotifyAPIManager:
 
     def get_authorization_code(self) -> str:
         """Returns the authorization code from the url"""
-        url = 'https://accounts.spotify.com/authorize'
-        url += '?response_type=code'
-        url += f'&client_id={self.client_id}'
-        url += f'&redirect_uri={self.redirect_uri}'
-        url += f'&scope={self.scope}'
+        base_url = 'https://accounts.spotify.com/authorize'
+        query_params = {
+            'response_type': 'code',
+            'client_id': self.client_id,
+            'redirect_uri': self.redirect_uri,
+            'scope': self.scope
+        }
+        url = base_url + '?' + urlencode(query_params)
         open_browser(url)
         code = input("Enter the full url: ")
         code = code.split('=')[1]
@@ -142,7 +172,7 @@ class SpotifyAPIManager:
         headers = self.get_access_token_header()
         if fields is not None:
             headers['Accept'] = 'application/json'
-        response = requests_get(url, headers=headers, params=params, data=None, timeout=5)
+        response = client.get(url, headers=headers, params=params, data=None, timeout=5)
         if response.status_code == 200:
             if fields is not None:
                 return response.json()[fields]

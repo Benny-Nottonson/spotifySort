@@ -1,17 +1,18 @@
 """This program is used to sort a Spotify playlist by the color of the album art of the songs"""
 from io import BytesIO
+from math import sqrt
 from queue import Queue
 from functools import cache
 from threading import Thread
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from numpy import sum as numpy_sum, ndarray, array, zeros, matmul, max as numpy_max, bincount, \
-    count_nonzero, fromiter
+from numpy import sum as numpy_sum, ndarray, array, zeros, max as numpy_max, bincount, \
+    count_nonzero, fromiter, argmin, apply_along_axis, dot, where, power
 from PIL import Image
 from skimage.measure import label
 from cv2 import cvtColor, resize, COLOR_RGB2BGR
 from customtkinter import CTkImage, CTk, CTkFrame, CTkLabel, CTkButton, CTkComboBox, CTkProgressBar
-from spotify_api import SpotifyAPI, SpotifyAPIManager, requests_get
+from spotify_api import SpotifyAPI, SpotifyAPIManager, public_get as client_get
 
 # The Below Code is for the Spotify API, you will need to create a Spotify Developer Account and
 # create an app to get the Client ID and Client Secret
@@ -23,6 +24,12 @@ sp = SpotifyAPI(api_manager=SpotifyAPIManager(client_id="",
                                               scope=SCOPE))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
+
+_xyz2lab_mat = array([[0.0, 116.0, 0.0], [500.0, -500.0, 0.0], [0.0, 200.0, -200.0]])
+_xyz2lab_offset = array([-16.0, 0.0, 0.0])
+_xyz2rgb_mat = array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
+_xyz_scale = array([95.047, 100.0, 108.883])
+_xyz_scale_inv = 1.0 / _xyz_scale
 
 
 def get_playlist_id(playlist_name: str) -> str:
@@ -42,7 +49,7 @@ def get_playlist_items(playlist_id: str) -> tuple:
 def get_playlist_art(playlist_id: str) -> CTkImage:
     """Returns the playlist preview image"""
     playlist_art = sp.playlist(playlist_id, fields='images')['images'][0]['url']
-    playlist_art = Image.open(BytesIO(requests_get(playlist_art, timeout=5).content))
+    playlist_art = Image.open(BytesIO(client_get(playlist_art, timeout=5).content))
     playlist_art = CTkImage(playlist_art, size=(250, 250))
     return playlist_art
 
@@ -80,28 +87,24 @@ def blob_extract(mac: ndarray) -> tuple:
     return n_blobs, blob
 
 
-def rgb_to_mac(img: ndarray) -> list:
+def rgb_to_mac(img: ndarray) -> ndarray:
     """Converts an RGB image to a MAC image"""
-    return [[int(find_minimum_macbeth(tuple(img[i][j]), lab_distance_3d))
-             for j in range(img.shape[1])] for i in range(img.shape[0])]
+    mac_indices = apply_along_axis(lambda x: find_minimum_macbeth(tuple(x), lab_distance_3d), 1,
+                                   img.reshape((-1, 3)))
+    return array(mac_indices, dtype='uint8').reshape(img.shape[:2])
 
 
 @cache
 def find_minimum_macbeth(p_entry: tuple, func: callable) -> int:
     """Finds the value of q_entries that minimizes the function func(p_entry, q_entry)"""
-    q_entries = (('dark skin', (115, 82, 68)), ('light skin', (194, 150, 130)),
-                 ('blue sky', (98, 122, 157)), ('foliage', (87, 108, 67)),
-                 ('blue flower', (133, 128, 177)), ('bluish green', (103, 189, 170)),
-                 ('orange', (214, 126, 44)), ('purplish blue', (80, 91, 166)),
-                 ('moderate red', (193, 90, 99)), ('purple', (94, 60, 108)),
-                 ('yellow green', (157, 188, 64)), ('orange yellow', (224, 163, 46)),
-                 ('blue', (56, 61, 150)), ('green', (70, 148, 73)),
-                 ('red', (175, 54, 60)), ('yellow', (231, 199, 31)),
-                 ('magenta', (187, 86, 149)), ('cyan', (8, 133, 161)),
-                 ('white 9.5', (243, 243, 242)), ('neutral 8', (200, 200, 200)),
-                 ('neutral 6.5', (160, 160, 160)), ('neutral 5', (122, 122, 121)),
-                 ('neutral 3.5', (85, 85, 85)), ('black 2', (52, 52, 52)))
-    return (min(enumerate([func(p_entry, tuple(q[1])) for q in q_entries]), key=lambda x: x[1]))[0]
+    macbeth_colors = array([[115, 82, 68], [194, 150, 130], [98, 122, 157], [87, 108, 67],
+                            [133, 128, 177], [103, 189, 170], [214, 126, 44], [80, 91, 166],
+                            [193, 90, 99], [94, 60, 108], [157, 188, 64], [224, 163, 46],
+                            [56, 61, 150], [70, 148, 73], [175, 54, 60], [231, 199, 31],
+                            [187, 86, 149], [8, 133, 161], [243, 243, 242], [200, 200, 200],
+                            [160, 160, 160], [122, 122, 121], [85, 85, 85], [52, 52, 52]])
+    return argmin(fromiter((func(p_entry, tuple(q_entry)) for q_entry in macbeth_colors),
+                           dtype='int'))
 
 
 def find_minimum(p_entry: tuple, func: callable, q_entries: tuple) -> int:
@@ -112,19 +115,15 @@ def find_minimum(p_entry: tuple, func: callable, q_entries: tuple) -> int:
 @cache
 def bgr_to_lab(bgr_color: tuple) -> tuple:
     """Converts a BGR color to a LAB color"""
-    bgr_color = bgr_color[::-1]
-    rgb_color = [
-        100 * (((element / 255.0 + 0.055) / 1.055) ** 2.4 if element / 255.0 > 0.04045
-               else (element / 255.0) / 12.92) for element in bgr_color]
-    rgb2_xyz_mat = array(
-        [[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
-    xyz = [round(element, 4) for element in matmul(rgb2_xyz_mat, rgb_color)]
-    xyz = matmul(array([[1 / 95.047, 0, 0], [0, 1 / 100.0, 0], [0, 0, 1 / 108.883]]), xyz)
-    xyz = [element ** 0.33333 if element > 0.008856 else 7.787 * element + 16.0 / 116 for element in
-           xyz]
-    xyz2_lab_mat = array([[0, 116, 0], [500, -500, 0], [0, 200, -200]])
-    final = tuple(round(element, 4) for element in matmul(xyz2_lab_mat, xyz) + array([-16, 0, 0]))
-    return final
+    rgb_color = array([bgr_color[2], bgr_color[1], bgr_color[0]], dtype=float) / 255.0
+    mask = rgb_color > 0.04045
+    rgb_color[mask] = ((rgb_color[mask] + 0.055) / 1.055) ** 2.4
+    rgb_color[~mask] = rgb_color[~mask] / 12.92
+    xyz_color = dot(_xyz2rgb_mat, rgb_color * _xyz_scale)
+    mask = xyz_color > 0.008856
+    xyz_color = where(mask, power(xyz_color, 1.0 / 3.0), 7.787 * xyz_color + 16.0 / 116)
+    lab_color = dot(_xyz2lab_mat, xyz_color) + _xyz2lab_offset
+    return tuple(lab_color)
 
 
 @cache
@@ -136,15 +135,15 @@ def ccv_distance(ccv_one: tuple, ccv_two: tuple) -> ndarray:
 
 def lab_distance_3d(lab_one: tuple, lab_two: tuple) -> float:
     """Calculates the distance between two LAB colors"""
-    lab_one, lab_two = bgr_to_lab(tuple(lab_one)), bgr_to_lab(tuple(lab_two))
-    return ((lab_one[0] - lab_two[0]) ** 2.0) + ((lab_one[1] - lab_two[1]) ** 2.0) + (
-            (lab_one[2] - lab_two[2]) ** 2.0) ** 0.5
+    l_1, a_1, b_1 = bgr_to_lab(lab_one)
+    l_2, a_2, b_2 = bgr_to_lab(lab_two)
+    return sqrt((l_1 - l_2) ** 2.0 + (a_1 - a_2) ** 2.0 + (b_1 - b_2) ** 2.0)
 
 
 @cache
 def get_image_from_url(url: str) -> ndarray:
     """Gets an image from a URL and converts it to BGR"""
-    response = requests_get(url, timeout=5)
+    response = client_get(url, timeout=5)
     img = Image.open(BytesIO(response.content))
     img = array(img)
     img = cvtColor(img, COLOR_RGB2BGR)
@@ -166,41 +165,26 @@ def generate_distance_matrix(n_loop: list, func: callable, loop_length: int) -> 
     return distance_matrix
 
 
-def resort_loop(loop, func, total, loop_length):
+def resort_loop(loop, func, loop_length):
     """Reorders a loop to minimize the distance between the colors"""
-    n_loop = get_n_loop(loop)
+    n_loop = deque(get_n_loop(loop))
     distance_matrix = generate_distance_matrix(n_loop, func, loop_length)
-    pass_count = 0
-    while pass_count < 250:
-        moving_loop_entry = n_loop.pop(-1)
-        min_index = -1
-        val = -1
-        for i in range(loop_length - 1):
-            if i in (0, loop_length - 2):
-                behind_index = n_loop[loop_length - 3][0]
-                ahead_index = n_loop[0][0]
-            else:
-                behind_index = n_loop[i - 1][0]
-                ahead_index = n_loop[i + 1][0]
-            avg_of_distances_i = (distance_matrix[behind_index, moving_loop_entry[0]] +
-                                  distance_matrix[ahead_index, moving_loop_entry[0]]) / 2
-            if total:
-                total_distance_i = numpy_sum(fromiter(
-                    (distance_matrix[n_loop[k - 1][0], n_loop[k][0]]
-                     for k in range(loop_length - 1)), dtype=float))
-                total_distance_i += distance_matrix[n_loop[0][0], n_loop[-1][0]]
-                if min_index == -1 or total_distance_i < val:
-                    val = total_distance_i
-                    min_index = i
-            else:
-                if min_index == -1 or avg_of_distances_i < val:
-                    val = avg_of_distances_i
-                    min_index = i
-        if min_index == loop_length - 2:
-            n_loop.insert(0, moving_loop_entry)
+    while True:
+        moving_loop_entry = n_loop.pop()
+        behind_indices = array([n_loop[i-1][0] for i in range(1, loop_length-1)])
+        ahead_indices = array([n_loop[i+1][0] for i in range(loop_length-2)])
+        behind_distances = distance_matrix[behind_indices, moving_loop_entry[0]]
+        ahead_distances = distance_matrix[ahead_indices, moving_loop_entry[0]]
+        avg_of_distances = (behind_distances + ahead_distances) / 2
+        min_index = argmin(avg_of_distances)
+        if min_index == loop_length - 3:
+            n_loop.appendleft(moving_loop_entry)
         else:
-            n_loop.insert(min_index + 1, moving_loop_entry)
-        pass_count += 1
+            n_loop.rotate(-(min_index+1))
+            n_loop.appendleft(moving_loop_entry)
+            n_loop.rotate(min_index+1)
+        if n_loop[0][0] == 0:
+            break
     return [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
 
 
@@ -222,8 +206,8 @@ def loop_sort(entries: tuple, func: callable) -> list:
     entries = deque(entries[1:])
     length = len(entries)
     for _ in range(1, length + 1):
-        item_one = loop[-1]
-        item_two = entries
+        item_one: deque = loop[-1]
+        item_two: deque = entries
         j = find_minimum(item_one, func, item_two)
         loop.append(item_two[j])
         item_two.rotate(-j)
@@ -237,7 +221,7 @@ def ccv_sort(playlist_id: str) -> list:
     items = remove_duplicates(items)
     entries = make_ccv_collection(items, ccv)
     loop = loop_sort(entries, ccv_distance)
-    loop = resort_loop(loop, ccv_distance, True, len(loop))
+    loop = resort_loop(loop, ccv_distance, len(loop))
     return [loop[i][0] for i in range(0, len(loop))]
 
 
@@ -252,6 +236,7 @@ def make_ccv_collection(playlist_items: tuple, data: callable) -> list:
         track_id = track['id']
         url = track['album']['images'][-1]['url']
         result_queue.put((track_id, data(url)))
+        print(f"Processed {track['name']}")
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         for item in playlist_items:
@@ -273,6 +258,7 @@ def sort_playlist(playlist_id: str) -> None:
 
 class App(CTk):
     """The main application class"""
+
     def __init__(self):
         green = "#1DB954"
         black = "#191414"
@@ -287,16 +273,16 @@ class App(CTk):
         self.album_art = CTkLabel(self.center_frame, text="")
         self.album_art.configure(width=250, height=250)
         self.album_art.pack()
-        self.dropdown = CTkComboBox(self, values=[playList['name'] for playList in
-                                                                playlists['items']],
-                                                  command=self.dropdown_changed)
+        self.dropdown = CTkComboBox(self, values=[playList['name'] for playList
+                                                  in playlists['items']],
+                                    command=self.dropdown_changed)
         self.dropdown.configure(state="readonly")
         self.dropdown.pack(padx=10, pady=10)
         self.button = CTkButton(self, text="Sort", command=self.sort_playlist,
-                                              fg_color=green, text_color=black)
+                                fg_color=green, text_color=black)
         self.button.pack(padx=10, pady=10)
         self.progress_bar = CTkProgressBar(self, mode="indeterminate",
-                                                         progress_color=green, bg_color=black)
+                                           progress_color=green, bg_color=black)
         self.progress_bar.set(0, 100)
         self.progress_bar.pack(padx=10, pady=10)
         self.dropdown_changed(None)

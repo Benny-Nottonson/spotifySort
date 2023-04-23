@@ -4,3 +4,4 @@ scikit-image
 opencv-python
 requests
 customtkinter
+urllib3
