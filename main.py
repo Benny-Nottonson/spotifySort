@@ -1,13 +1,12 @@
 """This program is used to sort a Spotify playlist by the color of the album art of the songs"""
 from io import BytesIO
-from math import sqrt
 from queue import Queue
 from functools import cache
 from threading import Thread
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from numpy import sum as numpy_sum, ndarray, array, zeros, max as numpy_max, bincount, \
-    count_nonzero, fromiter, argmin, apply_along_axis, dot, where, power
+    count_nonzero, fromiter, argmin, apply_along_axis, dot
 from PIL import Image
 from skimage.measure import label
 from cv2 import cvtColor, resize, COLOR_RGB2BGR
@@ -24,12 +23,6 @@ sp = SpotifyAPI(api_manager=SpotifyAPIManager(client_id="",
                                               scope=SCOPE))
 userID = sp.current_user()['id']
 playlists = sp.current_user_playlists()
-
-_xyz2lab_mat = array([[0.0, 116.0, 0.0], [500.0, -500.0, 0.0], [0.0, 200.0, -200.0]])
-_xyz2lab_offset = array([-16.0, 0.0, 0.0])
-_xyz2rgb_mat = array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
-_xyz_scale = array([95.047, 100.0, 108.883])
-_xyz_scale_inv = 1.0 / _xyz_scale
 
 
 def get_playlist_id(playlist_name: str) -> str:
@@ -114,16 +107,21 @@ def find_minimum(p_entry: tuple, func: callable, q_entries: tuple) -> int:
 
 @cache
 def bgr_to_lab(bgr_color: tuple) -> tuple:
-    """Converts a BGR color to a LAB color"""
-    rgb_color = array([bgr_color[2], bgr_color[1], bgr_color[0]], dtype=float) / 255.0
-    mask = rgb_color > 0.04045
-    rgb_color[mask] = ((rgb_color[mask] + 0.055) / 1.055) ** 2.4
-    rgb_color[~mask] = rgb_color[~mask] / 12.92
-    xyz_color = dot(_xyz2rgb_mat, rgb_color * _xyz_scale)
-    mask = xyz_color > 0.008856
-    xyz_color = where(mask, power(xyz_color, 1.0 / 3.0), 7.787 * xyz_color + 16.0 / 116)
-    lab_color = dot(_xyz2lab_mat, xyz_color) + _xyz2lab_offset
-    return tuple(lab_color)
+    """Converts a BGR color to a CIELAB color"""
+    bgr_color = array(bgr_color, dtype=float) / 255.0
+    mask = bgr_color > 0.04045
+    bgr_color[mask] = ((bgr_color[mask] + 0.055) / 1.055) ** 2.4
+    bgr_color[~mask] /= 12.92
+    bgr_matrix = array([[0.1805, 0.3576, 0.4124],
+                        [0.0722, 0.7152, 0.2126],
+                        [0.9505, 0.1192, 0.0193]])
+    xyz = dot(bgr_matrix, bgr_color)
+    xyz_n = array([0.95047, 1.0, 1.08883])
+    xyz_r = (xyz / xyz_n) ** (1 / 3)
+    mask = xyz_r <= 0.008856
+    xyz_r[mask] = (7.787 * xyz_r[mask]) + (16 / 116)
+    lab_color = (116 * xyz_r[1] - 16, 500 * (xyz_r[0] - xyz_r[1]), 200 * (xyz_r[1] - xyz_r[2]))
+    return lab_color
 
 
 @cache
@@ -134,10 +132,10 @@ def ccv_distance(ccv_one: tuple, ccv_two: tuple) -> ndarray:
 
 
 def lab_distance_3d(lab_one: tuple, lab_two: tuple) -> float:
-    """Calculates the distance between two LAB colors"""
+    """Estimates the distance between two BGR colors in LAB space"""
     l_1, a_1, b_1 = bgr_to_lab(lab_one)
     l_2, a_2, b_2 = bgr_to_lab(lab_two)
-    return sqrt((l_1 - l_2) ** 2.0 + (a_1 - a_2) ** 2.0 + (b_1 - b_2) ** 2.0)
+    return abs(l_1-l_2) + abs(a_1-a_2) + abs(b_1-b_2)
 
 
 @cache
@@ -145,8 +143,7 @@ def get_image_from_url(url: str) -> ndarray:
     """Gets an image from a URL and converts it to BGR"""
     response = client_get(url, timeout=5)
     img = Image.open(BytesIO(response.content))
-    img = array(img)
-    img = cvtColor(img, COLOR_RGB2BGR)
+    img = cvtColor(array(img), COLOR_RGB2BGR)
     img = resize(img, (16, 16))
     return img
 
@@ -171,8 +168,8 @@ def resort_loop(loop, func, loop_length):
     distance_matrix = generate_distance_matrix(n_loop, func, loop_length)
     while True:
         moving_loop_entry = n_loop.pop()
-        behind_indices = array([n_loop[i-1][0] for i in range(1, loop_length-1)])
-        ahead_indices = array([n_loop[i+1][0] for i in range(loop_length-2)])
+        behind_indices = array([n_loop[i - 1][0] for i in range(1, loop_length - 1)])
+        ahead_indices = array([n_loop[i + 1][0] for i in range(loop_length - 2)])
         behind_distances = distance_matrix[behind_indices, moving_loop_entry[0]]
         ahead_distances = distance_matrix[ahead_indices, moving_loop_entry[0]]
         avg_of_distances = (behind_distances + ahead_distances) / 2
@@ -180,9 +177,9 @@ def resort_loop(loop, func, loop_length):
         if min_index == loop_length - 3:
             n_loop.appendleft(moving_loop_entry)
         else:
-            n_loop.rotate(-(min_index+1))
+            n_loop.rotate(-(min_index + 1))
             n_loop.appendleft(moving_loop_entry)
-            n_loop.rotate(min_index+1)
+            n_loop.rotate(min_index + 1)
         if n_loop[0][0] == 0:
             break
     return [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
@@ -226,7 +223,7 @@ def ccv_sort(playlist_id: str) -> list:
 
 
 def make_ccv_collection(playlist_items: tuple, data: callable) -> list:
-    """Makes a collection of CCVs from a playlist"""""
+    """Makes a collection of CCVs from a playlist"""
     tuple_collection = []
     result_queue = Queue()
 
