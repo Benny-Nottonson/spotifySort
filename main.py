@@ -50,14 +50,14 @@ userID = sp.current_user()["id"]
 playlists = sp.current_user_playlists()
 
 
-def get_playlist_id(playlist_name: str) -> str or None:
+def get_playlist_id(playlist_name) -> str or None:
     """Returns the ID of a playlist, or None if it doesn't exist"""
     return next(
         (ids["id"] for ids in playlists["items"] if ids["name"] == playlist_name), None
     )
 
 
-def get_playlist_items(playlist_id: str) -> tuple[str, int]:
+def get_playlist_items(playlist_id) -> tuple[str, int]:
     """Returns a list of the items in a playlist"""
     playlist_length = sp.playlist(playlist_id, fields="name,tracks.total")["tracks"][
         "total"
@@ -70,42 +70,44 @@ def get_playlist_items(playlist_id: str) -> tuple[str, int]:
     return tuple(playlist_items)
 
 
-def get_playlist_art(playlist_id: str) -> CTkImage:
+def get_playlist_art(playlist_id) -> CTkImage:
     """Returns the playlist preview image"""
-    playlist_art: str = sp.playlist(playlist_id, fields="images")["images"][0]["url"]
-    playlist_art = Image.open(BytesIO(client_get(playlist_art, timeout=5).content))
-    playlist_art = CTkImage(playlist_art, size=(250, 250))
-    return playlist_art
+    playlist_art_url = sp.playlist(playlist_id, fields="images")["images"][0]["url"]
+    playlist_art_image = Image.open(BytesIO(client_get(playlist_art_url, timeout=5).content))
+    playlist_art_image = CTkImage(playlist_art_image, size=(250, 250))
+    return playlist_art_image
 
 
-def reorder_playlist(playlist_id: str, sorted_track_ids: list[str]) -> None:
+def reorder_playlist(playlist_id, sorted_track_ids: list[str]) -> None:
     """Reorders a playlist to match the order of the sorted track IDs"""
     sp.playlist_remove_all_occurrences_of_items(playlist_id, sorted_track_ids)
     sp.playlist_add_items(playlist_id, sorted_track_ids)
 
 
-def ccv(img_url: str) -> tuple:
+def ccv(image_url) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
-    img = get_image_from_url(img_url)
-    threshold = round(0.01 * img.shape[0] * img.shape[1])
-    mac = rgb_to_mac(img)
-    n_blobs, blob = blob_extract(array(mac))
+    image = get_image_from_url(image_url)
+    threshold = round(0.01 * image.shape[0] * image.shape[1])
+    mac_image = rgb_image_to_mac(image)
+    number_of_blobs, blob = blob_extract(array(mac_image))
     table = [
-        [mac[i][j], table[blob[i][j] - 1][1] + 1] if blob[i][j] != 0 else [0, 0]
+        [mac_image[i][j], table[blob[i][j] - 1][1] + 1] if blob[i][j] != 0 else [0, 0]
         for i in range(blob.shape[0])
         for j in range(blob.shape[1])
-        for table in [[[0, 0] for _ in range(0, n_blobs)]]
+        for table in [[[0, 0] for _ in range(0, number_of_blobs)]]
     ]
-    color_coherence_vector = [[0, 0] for _ in range(24)]
+    color_coherence_vector = [(0, 0) for _ in range(24)]
     for color_index, size in ((entry[0], entry[1]) for entry in table):
-        color_coherence_vector[color_index][size >= threshold] += size
-    color_coherence_vector = tuple(map(tuple, color_coherence_vector))
-    return color_coherence_vector
+        color_coherence_vector[color_index] = (
+            color_coherence_vector[color_index][0] + size * (size >= threshold),
+            color_coherence_vector[color_index][1] + size * (size < threshold)
+        )
+    return tuple(color_coherence_vector)
 
 
-def blob_extract(mac: ndarray) -> tuple:
+def blob_extract(mac_image: ndarray) -> tuple:
     """Extracts blobs from a MAC image"""
-    blob: ndarray = label(mac, connectivity=1) + 1
+    blob: ndarray = label(mac_image, connectivity=1) + 1
     n_blobs: int = numpy_max(blob)
     if n_blobs > 1:
         count: ndarray = bincount(blob.ravel(), minlength=n_blobs + 1)[2:]
@@ -113,7 +115,7 @@ def blob_extract(mac: ndarray) -> tuple:
     return n_blobs, blob
 
 
-def rgb_to_mac(img: ndarray) -> ndarray:
+def rgb_image_to_mac(img: ndarray) -> ndarray:
     """Converts an RGB image to a MAC image"""
     pixels: ndarray = img.reshape(-1, 3)
     mac_indices: ndarray = empty(pixels.shape[0], dtype="uint8")
@@ -162,9 +164,10 @@ def bgr_to_lab(bgr_color: tuple) -> tuple:
 
 def _bgr_to_xyz(bgr_color: ndarray) -> ndarray:
     """Converts a BGR color to a CIE XYZ color"""
-    mask: ndarray = bgr_color > 0.04045
-    bgr_color[mask] = ((bgr_color[mask] + 0.055) / 1.055) ** 2.4
-    bgr_color[~mask] /= 12.92
+    # Gamma correction, technically more accurate but slower and not necessary
+    # mask: ndarray = bgr_color > 0.04045
+    # bgr_color[mask] = ((bgr_color[mask] + 0.055) / 1.055) ** 2.4
+    # bgr_color[~mask] /= 12.92
     bgr_matrix: ndarray = array(
         [[0.1805, 0.3576, 0.4124], [0.0722, 0.7152, 0.2126], [0.9505, 0.1192, 0.0193]]
     )
@@ -172,12 +175,13 @@ def _bgr_to_xyz(bgr_color: ndarray) -> ndarray:
     return xyz
 
 
-def _xyz_to_lab(xyz: ndarray) -> ndarray:
+def _xyz_to_lab(xyz: ndarray) -> tuple:
     """Converts a CIE XYZ color to a CIELAB color"""
     xyz_n: ndarray = array([0.95047, 1.0, 1.08883])
     xyz_r: ndarray = (xyz / xyz_n) ** (1 / 3)
-    mask: ndarray = xyz_r <= 0.008856
-    xyz_r[mask] = (7.787 * xyz_r[mask]) + (16 / 116)
+    # Gamma correction, technically more accurate but slower and not necessary
+    # mask: ndarray = xyz_r <= 0.008856
+    # xyz_r[mask] = (7.787 * xyz_r[mask]) + (16 / 116)
     lab_color: tuple = (
         116 * xyz_r[1] - 16,
         500 * (xyz_r[0] - xyz_r[1]),
@@ -191,16 +195,14 @@ def ccv_distance(ccv_one: tuple, ccv_two: tuple) -> float:
     """Calculates the distance between two CCV vectors"""
     ccv_one, ccv_two = array(ccv_one), array(ccv_two)
     return numpy_sum(
-        [
-            3 * numpy_abs(ccv_one[:, 0] - ccv_two[:, 0]) + numpy_abs(ccv_one[:, 1] - ccv_two[:, 1])
-        ]
+        [3 * numpy_abs(ccv_one[:, 0] - ccv_two[:, 0]) + numpy_abs(ccv_one[:, 1] - ccv_two[:, 1])]
     )
 
 
-def lab_distance_3d(lab_one: tuple, lab_two: tuple) -> float:
+def lab_distance_3d(bgr_one: tuple, bgr_two: tuple) -> float:
     """Estimates the distance between two BGR colors in LAB space"""
-    l_1, a_1, b_1 = bgr_to_lab(lab_one)
-    l_2, a_2, b_2 = bgr_to_lab(lab_two)
+    l_1, a_1, b_1 = bgr_to_lab(bgr_one)
+    l_2, a_2, b_2 = bgr_to_lab(bgr_two)
     return abs(l_1 - l_2) + abs(a_1 - a_2) + abs(b_1 - b_2)
 
 
