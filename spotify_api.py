@@ -6,38 +6,28 @@ from urllib.parse import urlencode
 from json import load, dump
 from os import path, getcwd
 from base64 import b64encode
-from requests import post, delete, Session
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
+from httpx import Client, Response
 
 
 class FastHTTPClient:
-    """This class is used to make requests faster by using a session and retrying on failure"""
+    """This class is used to make requests faster by using a session"""
 
-    def __init__(
-        self, retries=3, backoff_factor=0.3, status_force_list=(500, 502, 504)
-    ):
-        self.session = Session()
-        retries = Retry(
-            total=retries,
-            backoff_factor=backoff_factor,
-            status_forcelist=status_force_list,
-        )
-        adapter = HTTPAdapter(max_retries=retries)
-        self.session.mount("https://", adapter)
-        self.session.mount("https://", adapter)
+    def __init__(self):
+        self.client: Client = Client()
 
-    def get(self, url, params=None, **kwargs):
+    def get(self, url: str, params: dict = None, **kwargs) -> Response:
         """Calls a get request with a url and params"""
-        return self.session.get(url, params=params, **kwargs)
+        return self.client.get(url, params=params, **kwargs)
 
-    def post(self, url, data=None, json=None, **kwargs):
+    def post(self, url: str, data: dict = None, json: dict = None, **kwargs) -> Response:
         """Calls a post request with a url, data and json"""
-        return self.session.post(url, data=data, json=json, **kwargs)
+        return self.client.post(url, data=data, json=json, **kwargs)
 
-    def delete(self, url, **kwargs):
-        """Calls a delete request with a url"""
-        return self.session.delete(url, **kwargs)
+    def delete(self, url: str, json: dict = None, **kwargs) -> Response:
+        """Calls a delete request with a url and json data"""
+        headers = kwargs.pop('headers', {})
+        headers['Content-Type'] = 'application/json'
+        return self.client.request('DELETE', url, headers=headers, json=json, **kwargs)
 
 
 client = FastHTTPClient()
@@ -134,7 +124,7 @@ class SpotifyAPIManager:
             "code": self.code,
             "redirect_uri": self.redirect_uri,
         }
-        response = post(self.token_url, headers=headers, data=data, timeout=5)
+        response = client.post(self.token_url, headers=headers, data=data, timeout=5)
         if response.status_code == 200:
             self.token = response.json()["access_token"]
             expires_in = response.json()["expires_in"]
@@ -146,7 +136,7 @@ class SpotifyAPIManager:
         """Refreshes the access token"""
         headers = {"Authorization": f"Basic {self.get_auth_header()}"}
         data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
-        response = post(self.token_url, headers=headers, data=data, timeout=5)
+        response = client.post(self.token_url, headers=headers, data=data, timeout=5)
         if response.status_code == 200:
             self.token = response.json()["access_token"]
             expires_in = response.json()["expires_in"]
@@ -173,7 +163,7 @@ class SpotifyAPIManager:
         headers = self.get_access_token_header()
         if fields is not None:
             headers["Accept"] = "application/json"
-        response = client.get(url, headers=headers, params=params, data=None, timeout=5)
+        response = client.get(url, headers=headers, params=params, timeout=5)
         if response.status_code == 200:
             if fields is not None:
                 return response.json()[fields]
@@ -248,7 +238,7 @@ class SpotifyAPI:
         endpoint = f"{self.api_manager.api_url}playlists/{playlist_id}/tracks"
         headers = {"Authorization": f"Bearer {self.api_manager.token}"}
         data = {"uris": [f"spotify:track:{tid}" for tid in items]}
-        response = delete(endpoint, headers=headers, json=data, timeout=5)
+        response = client.delete(endpoint, headers=headers, json=data, timeout=5)
         if response.status_code == 200:
             return True
         print(f"Error {response.status_code} occurred: {response.text}")
@@ -274,7 +264,7 @@ class SpotifyAPI:
         data = {"uris": [f"spotify:track:{tid}" for tid in track_ids]}
         if position is not None:
             data["position"] = position
-        response = post(endpoint, headers=headers, json=data, timeout=5)
+        response = client.post(endpoint, headers=headers, json=data, timeout=5)
         if response.status_code != 201:
             print(f"Error {response.status_code} occurred: {response.text}")
             raise ValueError("Request failed")
