@@ -28,6 +28,7 @@ A project coded by Benny Nottonson using Python, implements LRU Caching and CCV 
 ## Usage/Examples
 
 ```python
+# Inside ./playlist_utils
 # This can be created at https://developer.spotify.com/dashboard/applications
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="########################",
                                                client_secret="#########################",
