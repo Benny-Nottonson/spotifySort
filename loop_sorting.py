@@ -18,9 +18,7 @@ def generate_distance_matrix(n_loop: list, func: callable, loop_length: int) -> 
     distance_matrix: ndarray = zeros((loop_length, loop_length))
     for i in range(loop_length):
         for j in range(i):
-            distance_matrix[i][j] = distance_matrix[j][i] = func(
-                n_loop[i][1], n_loop[j][1]
-            )
+            distance_matrix[i][j] = distance_matrix[j][i] = func(n_loop[i][1], n_loop[j][1])
     return distance_matrix
 
 
@@ -36,16 +34,13 @@ def resort_loop(loop: list[tuple[int, int, int]], func: callable,
         n_loop = move_entry(n_loop, moving_loop_entry, distance_matrix)
         if n_loop[0][0] == 0:
             break
-    if counter == 100000:
-        print("Failed to resort loop")
     return [(loop[tpl[0]][0],) + tpl[1:] for tpl in n_loop]
 
 
 def move_entry(loop: deque[tuple[int, int, int]],
                moving_loop_entry: tuple[int, int, int],
-               distance_matrix: array) -> deque[tuple[int, int, int]]:
-    """Moves the entry with the least average distance between its neighbors to
-    the front of the loop"""
+               distance_matrix: ndarray) -> deque[tuple[int, int, int]]:
+    """Moves the entry with the least average distance to the front of the loop"""
     behind_indices = array([loop[i - 1][0] for i in range(1, len(loop) - 1)])
     ahead_indices = array([loop[i + 1][0] for i in range(len(loop) - 2)])
     behind_distances = distance_matrix[behind_indices, moving_loop_entry[0]]
@@ -61,13 +56,13 @@ def move_entry(loop: deque[tuple[int, int, int]],
     return loop
 
 
-def loop_sort(entries: tuple, func: callable) -> list:
+def loop_sort(entries: list[tuple], func: callable) -> list[tuple]:
     """Sorts a list of entries by the function func"""
     loop: deque = deque([entries[0]])
     entries: deque = deque(entries[1:])
     length: int = len(entries)
     for _ in range(1, length + 1):
-        item_one: deque = loop[-1]
+        item_one: tuple = loop[-1]
         item_two: deque = entries
         j: int = find_minimum(item_one, func, item_two)
         loop.append(item_two[j])
