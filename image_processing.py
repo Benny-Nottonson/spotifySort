@@ -129,13 +129,13 @@ def _bgr_to_xyz(bgr_color: ndarray) -> ndarray:
     return xyz
 
 
-def _xyz_to_lab(xyz: ndarray) -> tuple:
+def _xyz_to_lab(xyz: ndarray) -> tuple[float, float, float]:
     """Converts a CIE XYZ color to a CIELAB color"""
     xyz_n: ndarray = array([0.95047, 1.0, 1.08883])
     xyz_r: ndarray = (xyz / xyz_n) ** (1 / 3)
     mask: ndarray = xyz_r <= 0.008856
     xyz_r[mask] = (7.787 * xyz_r[mask]) + (16 / 116)
-    lab_color: tuple = (
+    lab_color: tuple[float, float, float] = (
         116 * xyz_r[1] - 16,
         500 * (xyz_r[0] - xyz_r[1]),
         200 * (xyz_r[1] - xyz_r[2]),
