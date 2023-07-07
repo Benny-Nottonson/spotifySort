@@ -13,8 +13,8 @@ def make_mosaic(images: list[tuple[str, str]]) -> Image:
     return final
 
 if __name__ == '__main__':
-    urls = ['https://i.scdn.co/image/ab67616d00004851d65c698f7b03031930a2a570', 
-            'https://i.scdn.co/image/ab67616d00004851d65c698f7b03031930a2a570', 
+    urls = ['https://i.scdn.co/image/ab67616d00004851d65c698f7b03031930a2a570',
+            'https://i.scdn.co/image/ab67616d00004851d65c698f7b03031930a2a570',
             'https://i.scdn.co/image/ab67616d00004851d65c698f7b03031930a2a570', 
             'https://i.scdn.co/image/ab67616d0000485114d93f9588f6c4ae041bf564', 
             'https://i.scdn.co/image/ab67616d00004851e6dfaed2104e0512b7f22256', 
@@ -144,9 +144,9 @@ if __name__ == '__main__':
             for quantization in test_range_quantization:
                 ccv_dict = []
                 for url in urls:
-                    ccv_dict.append((url, ccv(url, 
-                                              size=size, 
-                                              blur=blur, 
+                    ccv_dict.append((url, ccv(url,
+                                              size=size,
+                                              blur=blur,
                                               quantized_level=quantization)))
                 loop = loop_sort(ccv_dict, ccv_distance)
                 loop = resort_loop(loop, ccv_distance, len(loop))
