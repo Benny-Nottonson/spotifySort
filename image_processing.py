@@ -35,7 +35,7 @@ def blob_extract(mac_image: ndarray) -> tuple[int, ndarray]:
     return n_blobs, blob
 
 
-def ccv(image_url: str, size=32, blur=1, quantized_level=24) -> tuple:
+def ccv(image_url: str, size=32, blur=2, quantized_level=16) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
     image: Image = get_image_from_url(image_url, size, blur, quantized_level)
     image_array = array(image)
@@ -61,5 +61,5 @@ def ccv_distance(ccv_one: tuple, ccv_two: tuple) -> float:
     """Calculates the distance between two CCV vectors"""
     ccv_one, ccv_two = array(ccv_one), array(ccv_two)
     return numpy_sum(
-        [3 * numpy_abs(ccv_one[:, 0] - ccv_two[:, 0]) + numpy_abs(ccv_one[:, 1] - ccv_two[:, 1])]
+        [numpy_abs(ccv_one[:, 0] - ccv_two[:, 0]) + numpy_abs(ccv_one[:, 1] - ccv_two[:, 1])]
     )
