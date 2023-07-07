@@ -48,10 +48,10 @@ def ccv(image_url: str, size=32, blur=2, quantized_level=16) -> tuple:
         for table in [[[0, 0] for _ in range(0, n_blobs)]]
     ]
     color_coherence_vector = [(0, 0) for _ in range(quantized_level)]
-    for color_index, size in ((entry[0], entry[1]) for entry in table):
+    for color_index, blob_size in ((entry[0], entry[1]) for entry in table):
         color_coherence_vector[color_index] = (
-            color_coherence_vector[color_index][0] + size * (size >= size_threshold),
-            color_coherence_vector[color_index][1] + size * (size < size_threshold),
+            color_coherence_vector[color_index][0] + blob_size * (blob_size >= size_threshold),
+            color_coherence_vector[color_index][1] + blob_size * (blob_size < size_threshold),
         )
     return tuple(color_coherence_vector)
 
