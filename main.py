@@ -37,12 +37,14 @@ def make_ccv_collection(playlist_items: tuple, calculate_ccv: callable) -> list[
     """Makes a collection of CCVs from a playlist"""
     tuple_collection: list[str, str] = []
     result_queue: Queue[tuple[str, str]] = Queue()
+    url_list = []
 
     def process_item(to_process: dict[str, str]) -> None:
         """Processes an item in the playlist"""
         track: dict[str, str] = to_process["track"]
         track_id: str = track["id"]
         url: str = track["album"]["images"][-1]["url"]
+        url_list.append(url)
         result_queue.put((track_id, calculate_ccv(url)))
 
     with ThreadPoolExecutor(max_workers=8) as executor:
@@ -51,6 +53,8 @@ def make_ccv_collection(playlist_items: tuple, calculate_ccv: callable) -> list[
 
     while not result_queue.empty():
         tuple_collection.append(result_queue.get())
+
+    print(url_list)
 
     return tuple_collection
 

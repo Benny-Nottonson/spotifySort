@@ -14,13 +14,15 @@ from PIL import Image, ImageFilter
 from skimage.measure import label
 from spotify_api import public_get as client_get
 
+@cache
 def get_image_from_url(url: str, size: int, blur: int, quantized_level: int) -> Image:
     """Gets an image from a URL and converts it to rgb"""
     response_data = client_get(url, timeout=5)
     pil_image: Image = Image.open(BytesIO(response_data.content), mode="r").convert("RGB")
     pil_image = pil_image.filter(ImageFilter.GaussianBlur(blur))
     pil_image = pil_image.resize((size, size), Image.Resampling.LANCZOS)
-    pil_image = pil_image.quantize(quantized_level)
+    if quantized_level > 0:
+        pil_image = pil_image.quantize(quantized_level)
     return pil_image
 
 def blob_extract(mac_image: ndarray) -> tuple[int, ndarray]:
@@ -33,11 +35,8 @@ def blob_extract(mac_image: ndarray) -> tuple[int, ndarray]:
     return n_blobs, blob
 
 
-def ccv(image_url: str) -> tuple:
+def ccv(image_url: str, size=32, blur=1, quantized_level=24) -> tuple:
     """Calculates the Color Coherence Vector of an image"""
-    size = 32
-    blur = 1
-    quantized_level = 24
     image: Image = get_image_from_url(image_url, size, blur, quantized_level)
     image_array = array(image)
     size_threshold = round(0.01 * size * size)
@@ -54,7 +53,6 @@ def ccv(image_url: str) -> tuple:
             color_coherence_vector[color_index][0] + size * (size >= size_threshold),
             color_coherence_vector[color_index][1] + size * (size < size_threshold),
         )
-    print(color_coherence_vector)
     return tuple(color_coherence_vector)
 
 
