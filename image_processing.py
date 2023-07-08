@@ -32,7 +32,7 @@ def process_image(image: Image, size: int, blur: int, quantized_level: int) -> I
 
 def blob_extract(mac_image: ndarray) -> tuple[int, ndarray]:
     """Extracts blobs from a quantized image"""
-    blob: ndarray = label(mac_image, connectivity=1) + 1
+    blob: ndarray = label(mac_image, connectivity=2) + 1
     n_blobs: int = numpy_max(blob)
     if n_blobs > 1:
         count: ndarray = bincount(blob.ravel(), minlength=n_blobs + 1)[2:]
