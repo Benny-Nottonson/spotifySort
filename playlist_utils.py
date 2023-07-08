@@ -5,8 +5,7 @@ from customtkinter import CTkImage
 from spotify_api import SpotifyAPI, SpotifyAPIManager, public_get as client_get
 
 SCOPE = (
-    "user-library-modify playlist-modify-public ugc-image-upload playlist-modify-private "
-    "user-library-read"
+    "user-library-modify playlist-modify-public playlist-modify-private user-library-read"
 )
 
 sp = SpotifyAPI(
