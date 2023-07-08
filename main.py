@@ -27,7 +27,6 @@ def ccv_sort(playlist_id: str) -> list[str]:
     items = get_playlist_items(playlist_id)
     items = remove_duplicates(items)
     entries = make_ccv_collection(items, ccv)
-    print(entries)
     loop = loop_sort(entries, ccv_distance)
     loop = resort_loop(loop, ccv_distance, len(loop))
     return [loop[i][0] for i in range(0, len(loop))]
@@ -53,8 +52,6 @@ def make_ccv_collection(playlist_items: tuple, calculate_ccv: callable) -> list[
 
     while not result_queue.empty():
         tuple_collection.append(result_queue.get())
-
-    print(url_list)
 
     return tuple_collection
 

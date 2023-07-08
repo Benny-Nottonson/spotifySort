@@ -19,11 +19,16 @@ def get_image_from_url(url: str, size: int, blur: int, quantized_level: int) -> 
     """Gets an image from a URL and converts it to rgb"""
     response_data = client_get(url, timeout=5)
     pil_image: Image = Image.open(BytesIO(response_data.content), mode="r").convert("RGB")
-    pil_image = pil_image.filter(ImageFilter.GaussianBlur(blur))
-    pil_image = pil_image.resize((size, size), Image.Resampling.LANCZOS)
+    return process_image(pil_image, size, blur, quantized_level)
+
+def process_image(image: Image, size:int, blur: int, quantized_level:int) -> Image:
+    """Processes an image by blurring, resizing, and quantizing it"""
+    resized_image = image.resize((size, size), Image.Resampling.LANCZOS)
+    blurred_image = resized_image.filter(ImageFilter.GaussianBlur(blur))
     if quantized_level > 0:
-        pil_image = pil_image.quantize(quantized_level)
-    return pil_image
+        quantized_image = blurred_image.quantize(quantized_level)
+    return quantized_image
+
 
 def blob_extract(mac_image: ndarray) -> tuple[int, ndarray]:
     """Extracts blobs from a quantized image"""
