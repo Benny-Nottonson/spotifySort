@@ -21,13 +21,44 @@ from playlist_utils import (
 )
 from loop_sorting import loop_sort, resort_loop
 
+def prep_items(items: tuple[dict[str, str]]) -> tuple[tuple[dict[str, str]], dict]:
+    """Prepares items for processing"""
+    final_items = []
+    matching_dict = {}
+    song_dict = {}
+    seen = set()
+    for item in items:
+        track = item["track"]
+        track_id = track["id"]
+        url = track["album"]["images"][-1]["url"]
+        if url not in seen:
+            seen.add(url)
+            final_items.append(item)
+            matching_dict[url] = track_id
+            song_dict[track_id] = [track_id]
+        else:
+            song_dict[matching_dict[url]].append(track_id)
+    return tuple(final_items), song_dict
+
+
+def process_items(items: list[str], match_dict: dict) -> tuple[dict[str, str]]:
+    """Processes items to add duplicates"""
+    for item in items:
+        if item[0] in match_dict:
+            for song_id in match_dict[item[0]]:
+                if song_id != item[0]:
+                    items.append((song_id, item[1]))
+    return tuple(items)
+    
 
 def ccv_sort(playlist_id: str) -> list[str]:
     """Sorts a playlist using CCVs"""
     items = get_playlist_items(playlist_id)
     items = remove_duplicates(items)
-    entries = make_ccv_collection(items, ccv)
-    loop = loop_sort(entries, ccv_distance)
+    prepared_items, match_dict = prep_items(items)
+    entries = make_ccv_collection(prepared_items, ccv)
+    processed_items = process_items(entries, match_dict)
+    loop = loop_sort(processed_items, ccv_distance)
     loop = resort_loop(loop, ccv_distance, len(loop))
     return [loop[i][0] for i in range(0, len(loop))]
 
