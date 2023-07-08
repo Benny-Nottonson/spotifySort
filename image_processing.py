@@ -3,10 +3,10 @@ from io import BytesIO
 from functools import cache
 from numpy import (
     sum as numpy_sum,
-    abs as numpy_abs,
+    absolute,
+    amax,
     ndarray,
     array,
-    max as numpy_max,
     bincount,
     count_nonzero,
 )
@@ -33,7 +33,7 @@ def process_image(image: Image, size: int, blur: int, quantized_level: int) -> I
 def blob_extract(mac_image: ndarray) -> tuple[int, ndarray]:
     """Extracts blobs from a quantized image"""
     blob: ndarray = label(mac_image, connectivity=2) + 1
-    n_blobs: int = numpy_max(blob)
+    n_blobs: int = amax(blob)
     if n_blobs > 1:
         count: ndarray = bincount(blob.ravel(), minlength=n_blobs + 1)[2:]
         n_blobs += count_nonzero(count > 1)
@@ -66,5 +66,5 @@ def ccv_distance(ccv_one: tuple, ccv_two: tuple) -> float:
     """Calculates the distance between two CCV vectors"""
     ccv_one, ccv_two = array(ccv_one), array(ccv_two)
     return numpy_sum(
-        [numpy_abs(ccv_one[:, 0] - ccv_two[:, 0]) + numpy_abs(ccv_one[:, 1] - ccv_two[:, 1])]
+        [absolute(ccv_one[:, 0] - ccv_two[:, 0]) + absolute(ccv_one[:, 1] - ccv_two[:, 1])]
     )
