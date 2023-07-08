@@ -21,7 +21,7 @@ def get_image_from_url(url: str, size: int, blur: int, quantized_level: int) -> 
     pil_image: Image = Image.open(BytesIO(response_data.content), mode="r").convert("RGB")
     return process_image(pil_image, size, blur, quantized_level)
 
-def process_image(image: Image, size:int, blur: int, quantized_level:int) -> Image:
+def process_image(image: Image, size: int, blur: int, quantized_level: int) -> Image:
     """Processes an image by blurring, resizing, and quantizing it"""
     resized_image = image.resize((size, size), Image.Resampling.LANCZOS)
     blurred_image = resized_image.filter(ImageFilter.GaussianBlur(blur))
