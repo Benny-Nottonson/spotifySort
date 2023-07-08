@@ -49,7 +49,7 @@ def process_items(items: list[str], match_dict: dict) -> tuple[dict[str, str]]:
                 if song_id != item[0]:
                     items.append((song_id, item[1]))
     return tuple(items)
-    
+
 
 def ccv_sort(playlist_id: str) -> list[str]:
     """Sorts a playlist using CCVs"""
