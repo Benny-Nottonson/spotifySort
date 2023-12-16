@@ -10,8 +10,8 @@ SCOPE = (
 
 sp = SpotifyAPI(
     api_manager=SpotifyAPIManager(
-        client_id="37c0cd0d045d4728995a345cd3de949a",
-        client_secret="0188607cfc0d455f85615916762f77a6",
+        client_id="",
+        client_secret="",
         redirect_uri="https://example.com",
         scope=SCOPE,
     )
