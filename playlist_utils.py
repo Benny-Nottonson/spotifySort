@@ -3,6 +3,10 @@ from io import BytesIO
 from PIL import Image
 from customtkinter import CTkImage
 from spotify_api import SpotifyAPI, SpotifyAPIManager, public_get as client_get
+from dotenv import load_dotenv
+from os import getenv
+
+load_dotenv()
 
 SCOPE = (
     "user-library-modify playlist-modify-public playlist-modify-private user-library-read"
@@ -10,8 +14,8 @@ SCOPE = (
 
 sp = SpotifyAPI(
     api_manager=SpotifyAPIManager(
-        client_id="",
-        client_secret="",
+        client_id=getenv('CLIENT_ID'),
+        client_secret=getenv('CLIENT_SECRET'),
         redirect_uri="https://example.com",
         scope=SCOPE,
     )

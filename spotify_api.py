@@ -130,6 +130,7 @@ class SpotifyAPIManager:
             expires_in = response.json()["expires_in"]
             self.token_expires = datetime.now() + timedelta(seconds=expires_in)
             return self.token
+        print(response)
         raise ValueError("Authentication failed")
 
     def refresh_access_token(self, refresh_token) -> str:
